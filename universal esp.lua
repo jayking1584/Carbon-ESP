@@ -70,17 +70,13 @@ local ESPConfig = {
     TextFont = Enum.Font.Gotham,
 }
 
--- Updated Font Options
+-- Updated Font Options - Only working Roblox fonts
 local FONT_OPTIONS = {
     {"Gotham", Enum.Font.Gotham, "Clean modern font (Default)"},
-    {"GothamBold", Enum.Font.GothamBold, "Bold Gotham font"},
-    {"Roboto", Enum.Font.Roboto, "Google's Roboto font"},
     {"Arial", Enum.Font.Arial, "Standard Arial font"},
-    {"ArialBold", Enum.Font.ArialBold, "Bold Arial font"},
     {"SourceSans", Enum.Font.SourceSans, "Source Sans font"},
-    {"SourceSansBold", Enum.Font.SourceSansBold, "Bold Source Sans"},
-    {"LuckiestGuy", Enum.Font.LuckiestGuy, "Fun comic style font"},
-    {"FredokaOne", Enum.Font.FredokaOne, "Rounded friendly font"}
+    {"SciFi", Enum.Font.SciFi, "SciFi style font"},
+    {"Code", Enum.Font.Code, "Monospace code font"}
 }
 
 -- ESP Storage
@@ -241,10 +237,11 @@ local function IsPlayerVisible(character, targetPart, distance)
     
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {character, CurrentCamera}
+    local filterList = {character, CurrentCamera}
     if LocalPlayer.Character then
-        table.insert(raycastParams.FilterDescendantsInstances, LocalPlayer.Character)
+        table.insert(filterList, LocalPlayer.Character)
     end
+    raycastParams.FilterDescendantsInstances = filterList
     
     local raycastResult = Workspace:Raycast(cameraPos, (targetPos - cameraPos).Unit * (targetPos - cameraPos).Magnitude, raycastParams)
     return raycastResult == nil
@@ -294,6 +291,38 @@ local function GetHealthColor(health, maxHealth)
     end
     
     return healthColorCache[cacheKey]
+end
+
+-- Enhanced ESP Removal
+local function RemoveESP(player)
+    local esp = ESPObjects[player]
+    if not esp then return end
+    
+    esp.IsValid = false
+    
+    for name, connection in pairs(esp.Connections) do
+        if connection then
+            pcall(function() connection:Disconnect() end)
+        end
+    end
+    
+    for name, drawing in pairs(esp.Drawings) do
+        if drawing then
+            pcall(function() drawing:Remove() end)
+        end
+    end
+    
+    for name, cham in pairs(esp.Chams) do
+        if cham then
+            pcall(function() cham:Destroy() end)
+        end
+    end
+    
+    esp.Drawings = {}
+    esp.Chams = {}
+    esp.Connections = {}
+    
+    ESPObjects[player] = nil
 end
 
 -- Enhanced ESP Creation
@@ -390,7 +419,7 @@ local function CreateESP(player)
         if ESPConfig.ChamsEnabled then
             for _, partName in ipairs(CHAMS_PARTS) do
                 local part = character:FindFirstChild(partName)
-                if part and part:IsDescendantOf(Workspace) then
+                if part and part:IsA("BasePart") and part:IsDescendantOf(Workspace) then
                     local highlight = Instance.new("Highlight")
                     highlight.Adornee = part
                     highlight.FillColor = ESPConfig.ChamsColor
@@ -442,38 +471,6 @@ local function CreateESP(player)
         esp.Chams = {}
         esp.Character = nil
     end)
-end
-
--- Enhanced ESP Removal
-local function RemoveESP(player)
-    local esp = ESPObjects[player]
-    if not esp then return end
-    
-    esp.IsValid = false
-    
-    for name, connection in pairs(esp.Connections) do
-        if connection then
-            pcall(function() connection:Disconnect() end)
-        end
-    end
-    
-    for name, drawing in pairs(esp.Drawings) do
-        if drawing then
-            pcall(function() drawing:Remove() end)
-        end
-    end
-    
-    for name, cham in pairs(esp.Chams) do
-        if cham then
-            pcall(function() cham:Destroy() end)
-        end
-    end
-    
-    esp.Drawings = {}
-    esp.Chams = {}
-    esp.Connections = {}
-    
-    ESPObjects[player] = nil
 end
 
 -- World-space ESP update
@@ -1555,7 +1552,6 @@ local function CreateEnhancedGUI()
 
     -- Connect hide button
     HideButton.MouseButton1Click:Connect(ToggleGUI)
-    HideButton.TouchTap:Connect(ToggleGUI)
 
     -- Auto-update canvas size
     ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -1625,18 +1621,6 @@ local function InitializeESP()
     local success, err = pcall(CreateEnhancedGUI)
     if not success then
         warn("GUI Creation Error: " .. err)
-        -- Try again with a simpler approach
-        local simpleGUI = Instance.new("ScreenGui")
-        simpleGUI.Name = "CarbonESP"
-        simpleGUI.Parent = CoreGui
-        
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(0, 200, 0, 50)
-        label.Position = UDim2.new(0, 20, 0, 20)
-        label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        label.Text = "Carbon ESP Loaded (Simple Mode)"
-        label.Parent = simpleGUI
     else
         print("Carbon ESP GUI created successfully!")
     end
@@ -1645,9 +1629,7 @@ local function InitializeESP()
     Connections.RenderStepped = RunService.RenderStepped:Connect(ESPLoop)
     
     print("Carbon's Universal ESP - LINE OF SIGHT EDITION Loaded!")
-    print("Added: Line of Sight feature with adjustable range")
-    print("Updated: 10 popular ESP fonts including Gotham, Roboto, Arial, etc.")
-    print("Enhanced: Scrollable interface with better organization")
+    print("Features: Box ESP, Tracers, Names, Distance, Tools, Skeletons, Chams, Health Bars, Line of Sight")
 end
 
 -- Cleanup function
@@ -1677,19 +1659,6 @@ end
 local success, err = pcall(InitializeESP)
 if not success then
     warn("ESP Initialization Error: " .. err)
-    -- Create a simple notification that ESP failed to load
-    local errorGUI = Instance.new("ScreenGui")
-    errorGUI.Name = "CarbonESPError"
-    errorGUI.Parent = CoreGui
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0, 300, 0, 60)
-    label.Position = UDim2.new(0, 20, 0, 20)
-    label.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.Text = "Carbon ESP Failed to Load:\n" .. err
-    label.TextWrapped = true
-    label.Parent = errorGUI
 end
 
 return CleanupESP
