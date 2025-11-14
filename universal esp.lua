@@ -75,7 +75,6 @@ local FONT_OPTIONS = {
     {"Gotham", Enum.Font.Gotham, "Clean modern font (Default)"},
     {"GothamBold", Enum.Font.GothamBold, "Bold Gotham font"},
     {"Roboto", Enum.Font.Roboto, "Google's Roboto font"},
-    {"RobotoBold", Enum.Font.RobotoBold, "Bold Roboto font"},
     {"Arial", Enum.Font.Arial, "Standard Arial font"},
     {"ArialBold", Enum.Font.ArialBold, "Bold Arial font"},
     {"SourceSans", Enum.Font.SourceSans, "Source Sans font"},
