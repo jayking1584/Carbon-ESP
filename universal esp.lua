@@ -35,7 +35,12 @@ local ESPConfig = {
     WallCheckEnabled=true,
     WallCheckColor=Color3.fromRGB(255,255,0),
     VisibilityCheckEnabled=true,
-    VisibilityCheckColor=Color3.fromRGB(255,0,0)
+    VisibilityCheckColor=Color3.fromRGB(255,0,0),
+    ConeVisionEnabled=true,
+    ConeVisionColor=Color3.fromRGB(0, 255, 255),
+    ConeVisionTransparency=0.8,
+    ConeVisionRange=50,
+    ConeVisionFOV=90
 }
 
 local ESPObjects = {}
@@ -99,6 +104,11 @@ local function HideESP(esp)
         end
     end
     if esp.Highlight then esp.Highlight.Enabled=false end
+    if esp.Cone then 
+        for _,part in ipairs(esp.Cone) do
+            part.Transparency = 1
+        end
+    end
 end
 
 local function RemoveESP(player)
@@ -120,6 +130,11 @@ local function RemoveESP(player)
         end
     end
     if esp.Highlight then esp.Highlight:Destroy() end
+    if esp.Cone then
+        for _,part in ipairs(esp.Cone) do
+            part:Destroy()
+        end
+    end
     ESPObjects[player]=nil
 end
 
@@ -141,9 +156,70 @@ local SKELETON_BONES = {
     {"RightLowerLeg", "RightFoot"}
 }
 
+local function CreateConeVision(esp, char)
+    if not ESPConfig.ConeVisionEnabled then return end
+    
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+    
+    esp.Cone = {}
+    
+    -- Create cone parts (using wedges for the cone shape)
+    local conePart = Instance.new("Part")
+    conePart.Name = "ConeVision"
+    conePart.Anchored = true
+    conePart.CanCollide = false
+    conePart.CastShadow = false
+    conePart.Material = Enum.Material.Neon
+    conePart.BrickColor = BrickColor.new(ESPConfig.ConeVisionColor)
+    conePart.Transparency = ESPConfig.ConeVisionTransparency
+    conePart.Parent = char
+    
+    -- Create wedge mesh for cone shape
+    local mesh = Instance.new("SpecialMesh", conePart)
+    mesh.MeshType = Enum.MeshType.Wedge
+    mesh.Scale = Vector3.new(0.5, 1, 1)
+    
+    esp.Cone[1] = conePart
+end
+
+local function UpdateConeVision(esp, char, head)
+    if not ESPConfig.ConeVisionEnabled or not esp.Cone or not esp.Cone[1] then return end
+    
+    local conePart = esp.Cone[1]
+    
+    -- Calculate cone dimensions based on FOV and range
+    local fovRad = math.rad(ESPConfig.ConeVisionFOV)
+    local range = ESPConfig.ConeVisionRange
+    local baseWidth = math.tan(fovRad / 2) * range * 2
+    
+    -- Position cone at head
+    conePart.Size = Vector3.new(range, baseWidth / 2, range)
+    conePart.CFrame = head.CFrame * CFrame.new(0, 0, -range / 2) * CFrame.Angles(0, math.pi, 0)
+    
+    -- Raycast to check if cone hits wall
+    local rayOrigin = head.Position
+    local rayDirection = head.CFrame.LookVector * range
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, char}
+    
+    local rayResult = Workspace:Raycast(rayOrigin, rayDirection, rayParams)
+    
+    -- Change color if wall is hit
+    if rayResult then
+        conePart.BrickColor = BrickColor.new(ESPConfig.WallCheckColor)
+    else
+        conePart.BrickColor = BrickColor.new(ESPConfig.ConeVisionColor)
+    end
+    
+    -- Gradient transparency (more transparent at far end)
+    conePart.Transparency = ESPConfig.ConeVisionTransparency
+end
+
 local function CreateESP(player)
     if player==LocalPlayer or ESPObjects[player] then return end
-    local esp={Player=player,Drawings={},Connections={},Character=player.Character,IsValid=true}
+    local esp={Player=player,Drawings={},Connections={},Character=player.Character,IsValid=true, Cone=nil}
 
     -- ESP Elements with proper stacking order
     if ESPConfig.BoxEnabled then 
@@ -203,6 +279,11 @@ local function CreateESP(player)
         })
     end
     
+    -- Cone Vision
+    if ESPConfig.ConeVisionEnabled and esp.Character then
+        CreateConeVision(esp, esp.Character)
+    end
+    
     if ESPConfig.ChamsEnabled then
         esp.Highlight = Instance.new("Highlight")
         esp.Highlight.FillColor = ESPConfig.ChamsColor
@@ -219,6 +300,10 @@ local function CreateESP(player)
         if esp.Highlight then
             esp.Highlight.Adornee = char
         end
+        -- Create cone vision when character is added
+        if ESPConfig.ConeVisionEnabled then
+            CreateConeVision(esp, char)
+        end
     end)
     
     esp.Connections.CharacterRemoving=player.CharacterRemoving:Connect(function() 
@@ -227,6 +312,12 @@ local function CreateESP(player)
         if esp.Highlight then
             esp.Highlight.Adornee = nil
             esp.Highlight.Enabled = false
+        end
+        if esp.Cone then
+            for _,part in ipairs(esp.Cone) do
+                part:Destroy()
+            end
+            esp.Cone = nil
         end
     end)
     
@@ -517,6 +608,11 @@ local function UpdateESP(player)
         if esp.Drawings.LOSArrow then
             esp.Drawings.LOSArrow.Visible = false
         end
+    end
+
+    -- Update Cone Vision
+    if head then
+        UpdateConeVision(esp, char, head)
     end
 end
 
@@ -859,12 +955,14 @@ CreateToggle("Skeleton ESP", "SkeletonEnabled", 6)
 CreateToggle("Player Chams", "ChamsEnabled", 7)
 CreateToggle("Tracers", "TracersEnabled", 8)
 CreateToggle("Line of Sight", "LineOfSightEnabled", 9)
-CreateToggle("Wall Check", "WallCheckEnabled", 10)
-CreateToggle("Visibility Check", "VisibilityCheckEnabled", 11)
+CreateToggle("Cone Vision", "ConeVisionEnabled", 10)
+CreateToggle("Wall Check", "WallCheckEnabled", 11)
+CreateToggle("Visibility Check", "VisibilityCheckEnabled", 12)
 
-CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 12)
-CreateSlider("LOS Length", "LineLength", 10, 100, 25, 13)
-CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 14)
+CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 13)
+CreateSlider("LOS Length", "LineLength", 10, 100, 25, 14)
+CreateSlider("Cone Range", "ConeVisionRange", 10, 100, 50, 15)
+CreateSlider("Cone FOV", "ConeVisionFOV", 30, 120, 90, 16)
 
 -- UI State management
 local isMinimized = false
