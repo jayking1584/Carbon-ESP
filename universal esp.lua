@@ -1,5 +1,5 @@
 -- Carbon's Universal ESP - Enhanced GUI Edition
--- Fixed Independent Features
+-- Fixed GUI Popup
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -817,13 +817,229 @@ local function UpdateESP(player, currentTime)
     end
 end
 
--- [Rest of the code remains the same - GUI creation, initialization, etc.]
--- The GUI creation function is the same as before, just including the declaration to avoid errors
+-- SIMPLIFIED GUI CREATION - GUARANTEED TO POP UP
 local function CreateEnhancedGUI()
-    -- GUI creation code here (same as before)
-    -- This is a placeholder - the actual GUI code would be the same as in previous versions
-    print("GUI Created")
-    return Instance.new("ScreenGui")
+    -- Clean up any existing GUI first
+    local existingGUI = CoreGui:FindFirstChild("CarbonESP")
+    if existingGUI then
+        existingGUI:Destroy()
+    end
+    
+    -- Create the main GUI
+    local CarbonESP = Instance.new("ScreenGui")
+    CarbonESP.Name = "CarbonESP"
+    CarbonESP.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    CarbonESP.ResetOnSpawn = false
+    CarbonESP.DisplayOrder = 999
+    CarbonESP.IgnoreGuiInset = true
+    
+    -- Create main frame
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 400, 0, 500)
+    MainFrame.Position = UDim2.new(0, 20, 0, 20)
+    MainFrame.BackgroundColor3 = CreativeColors.Primary
+    MainFrame.BackgroundTransparency = 0.1
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = CarbonESP
+    
+    -- Add rounded corners
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 12)
+    UICorner.Parent = MainFrame
+    
+    -- Add border
+    local UIStroke = Instance.new("UIStroke")
+    UIStroke.Color = CreativeColors.Accent
+    UIStroke.Thickness = 2
+    UIStroke.Parent = MainFrame
+    
+    -- Title bar
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"
+    TitleBar.Size = UDim2.new(1, 0, 0, 50)
+    TitleBar.BackgroundColor3 = CreativeColors.Secondary
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = MainFrame
+    
+    local TitleBarCorner = Instance.new("UICorner")
+    TitleBarCorner.CornerRadius = UDim.new(0, 12)
+    TitleBarCorner.Parent = TitleBar
+    
+    local Title = Instance.new("TextLabel")
+    Title.Name = "Title"
+    Title.Size = UDim2.new(0.7, 0, 1, 0)
+    Title.Position = UDim2.new(0, 15, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "CARBON'S ESP v2.0"
+    Title.TextColor3 = CreativeColors.Text
+    Title.TextSize = 18
+    Title.Font = Enum.Font.GothamBold
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Parent = TitleBar
+    
+    local HideButton = Instance.new("TextButton")
+    HideButton.Name = "HideButton"
+    HideButton.Size = UDim2.new(0, 80, 0, 30)
+    HideButton.Position = UDim2.new(1, -85, 0.5, -15)
+    HideButton.BackgroundColor3 = CreativeColors.Warning
+    HideButton.BorderSizePixel = 0
+    HideButton.Text = "HIDE"
+    HideButton.TextColor3 = CreativeColors.Text
+    HideButton.TextSize = 14
+    HideButton.Font = Enum.Font.GothamBold
+    HideButton.Parent = TitleBar
+    
+    local HideButtonCorner = Instance.new("UICorner")
+    HideButtonCorner.CornerRadius = UDim.new(0, 6)
+    HideButtonCorner.Parent = HideButton
+    
+    -- Content area
+    local ScrollFrame = Instance.new("ScrollingFrame")
+    ScrollFrame.Size = UDim2.new(1, -10, 1, -60)
+    ScrollFrame.Position = UDim2.new(0, 5, 0, 55)
+    ScrollFrame.BackgroundTransparency = 1
+    ScrollFrame.BorderSizePixel = 0
+    ScrollFrame.ScrollBarThickness = 6
+    ScrollFrame.ScrollBarImageColor3 = CreativeColors.Accent
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 800)
+    ScrollFrame.Parent = MainFrame
+    
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.Padding = UDim.new(0, 8)
+    ContentLayout.Parent = ScrollFrame
+    
+    -- Create toggle buttons for features
+    local features = {
+        {"Box ESP", "BoxEnabled", CreativeColors.Accent},
+        {"Tracers", "TracerEnabled", CreativeColors.Accent},
+        {"Names", "NameEnabled", CreativeColors.Accent2},
+        {"Distance", "DistanceEnabled", CreativeColors.Accent2},
+        {"Tools", "ToolEnabled", CreativeColors.Accent2},
+        {"Skeleton", "SkeletonEnabled", CreativeColors.Purple},
+        {"Health Bars", "HealthBarEnabled", CreativeColors.Purple},
+        {"Line of Sight", "LineOfSightEnabled", CreativeColors.Purple},
+        {"Visibility Check", "VisibilityCheck", CreativeColors.Gold},
+        {"Chams", "ChamsEnabled", CreativeColors.Gold}
+    }
+    
+    for i, feature in ipairs(features) do
+        local featureName, configKey, color = feature[1], feature[2], feature[3]
+        
+        local ToggleContainer = Instance.new("Frame")
+        ToggleContainer.Size = UDim2.new(1, 0, 0, 35)
+        ToggleContainer.BackgroundColor3 = CreativeColors.Secondary
+        ToggleContainer.BackgroundTransparency = 0.8
+        ToggleContainer.Parent = ScrollFrame
+        
+        local ToggleCorner = Instance.new("UICorner")
+        ToggleCorner.CornerRadius = UDim.new(0, 8)
+        ToggleCorner.Parent = ToggleContainer
+        
+        local FeatureLabel = Instance.new("TextLabel")
+        FeatureLabel.Size = UDim2.new(0, 200, 1, 0)
+        FeatureLabel.BackgroundTransparency = 1
+        FeatureLabel.Text = "  " .. featureName
+        FeatureLabel.TextColor3 = color
+        FeatureLabel.TextSize = 14
+        FeatureLabel.Font = Enum.Font.Gotham
+        FeatureLabel.TextXAlignment = Enum.TextXAlignment.Left
+        FeatureLabel.Parent = ToggleContainer
+        
+        local ToggleButton = Instance.new("TextButton")
+        ToggleButton.Name = configKey
+        ToggleButton.Size = UDim2.new(0, 60, 0, 25)
+        ToggleButton.Position = UDim2.new(1, -65, 0.5, -12.5)
+        ToggleButton.BackgroundColor3 = ESPConfig[configKey] and CreativeColors.Success or CreativeColors.Danger
+        ToggleButton.BorderSizePixel = 0
+        ToggleButton.Text = ESPConfig[configKey] and "ON" or "OFF"
+        ToggleButton.TextColor3 = CreativeColors.Text
+        ToggleButton.TextSize = 12
+        ToggleButton.Font = Enum.Font.GothamBold
+        ToggleButton.Parent = ToggleContainer
+        
+        local ToggleButtonCorner = Instance.new("UICorner")
+        ToggleButtonCorner.CornerRadius = UDim.new(0, 6)
+        ToggleButtonCorner.Parent = ToggleButton
+        
+        -- Toggle functionality
+        ToggleButton.MouseButton1Click:Connect(function()
+            ESPConfig[configKey] = not ESPConfig[configKey]
+            ToggleButton.BackgroundColor3 = ESPConfig[configKey] and CreativeColors.Success or CreativeColors.Danger
+            ToggleButton.Text = ESPConfig[configKey] and "ON" or "OFF"
+            
+            -- Refresh ESP for all players
+            for player in pairs(ESPObjects) do
+                RemoveESP(player)
+                CreateESP(player)
+            end
+        end)
+    end
+    
+    -- Drag functionality
+    local dragging = false
+    local dragInput, dragStart, startPos
+    
+    local function update(input)
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(0, startPos.X.Offset + delta.X, 0, startPos.Y.Offset + delta.Y)
+    end
+    
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    TitleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+    
+    -- Hide/show functionality
+    local function ToggleGUI()
+        IsGUIVisible = not IsGUIVisible
+        if IsGUIVisible then
+            MainFrame.Size = UDim2.new(0, 400, 0, 500)
+            HideButton.Text = "HIDE"
+            HideButton.BackgroundColor3 = CreativeColors.Warning
+            ScrollFrame.Visible = true
+        else
+            MainFrame.Size = UDim2.new(0, 400, 0, 50)
+            HideButton.Text = "SHOW"
+            HideButton.BackgroundColor3 = CreativeColors.Success
+            ScrollFrame.Visible = false
+        end
+    end
+    
+    HideButton.MouseButton1Click:Connect(ToggleGUI)
+    
+    -- Auto-update canvas size
+    ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 10)
+    end)
+    
+    -- PARENT THE GUI - THIS IS CRITICAL!
+    CarbonESP.Parent = CoreGui
+    
+    print("✅ Carbon ESP GUI created successfully!")
+    return CarbonESP
 end
 
 -- Optimized main loop
@@ -881,19 +1097,38 @@ end
 
 -- Initialize ESP
 local function InitializeESP()
-    -- Create GUI first
-    local success, err = pcall(CreateEnhancedGUI)
-    if not success then
-        warn("GUI Creation Error: " .. err)
+    print("🚀 Initializing Carbon's Universal ESP...")
+    
+    -- Create GUI FIRST - This ensures it pops up immediately
+    local guiSuccess, guiError = pcall(CreateEnhancedGUI)
+    if not guiSuccess then
+        warn("❌ GUI Creation Failed: " .. tostring(guiError))
+        -- Create a simple fallback GUI
+        local fallbackGUI = Instance.new("ScreenGui")
+        fallbackGUI.Name = "CarbonESP_Fallback"
+        fallbackGUI.Parent = CoreGui
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0, 300, 0, 60)
+        label.Position = UDim2.new(0, 20, 0, 20)
+        label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.Text = "Carbon ESP Loaded\n(GUI Error - Features Still Work)"
+        label.TextWrapped = true
+        label.Parent = fallbackGUI
     else
-        print("Carbon ESP GUI created successfully!")
+        print("✅ GUI created successfully!")
     end
     
+    -- Initialize ESP monitoring
     InitializePlayerMonitoring()
+    
+    -- Start main loop
     Connections.RenderStepped = RunService.RenderStepped:Connect(ESPLoop)
     
-    print("Carbon's Universal ESP - LINE OF SIGHT EDITION Loaded!")
-    print("Features: Box ESP, Tracers, Names, Distance, Tools, Skeletons, Chams, Health Bars, Line of Sight")
+    print("🎉 Carbon's Universal ESP - LINE OF SIGHT EDITION Fully Loaded!")
+    print("📊 Features: Box ESP, Tracers, Names, Distance, Tools, Skeletons, Health Bars, Line of Sight")
+    print("🎮 GUI should be visible in the top-left corner!")
 end
 
 -- Cleanup function
@@ -916,13 +1151,35 @@ local function CleanupESP()
         CarbonESP:Destroy()
     end
     
-    print("Carbon's ESP cleaned up")
+    local FallbackGUI = CoreGui:FindFirstChild("CarbonESP_Fallback")
+    if FallbackGUI then
+        FallbackGUI:Destroy()
+    end
+    
+    print("🧹 Carbon's ESP cleaned up")
 end
 
--- Initialize with error handling
+-- MAIN EXECUTION - THIS MAKES THE GUI POP UP
+print("🔧 Starting Carbon ESP...")
 local success, err = pcall(InitializeESP)
 if not success then
-    warn("ESP Initialization Error: " .. err)
+    warn("💥 ESP Initialization Error: " .. tostring(err))
+    
+    -- Even if main ESP fails, try to create at least a GUI
+    local errorGUI = Instance.new("ScreenGui")
+    errorGUI.Name = "CarbonESP_Error"
+    errorGUI.Parent = CoreGui
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 350, 0, 80)
+    label.Position = UDim2.new(0, 20, 0, 20)
+    label.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Text = "Carbon ESP Error:\n" .. tostring(err)
+    label.TextWrapped = true
+    label.Parent = errorGUI
+else
+    print("✅ Carbon ESP initialized successfully!")
 end
 
 return CleanupESP
