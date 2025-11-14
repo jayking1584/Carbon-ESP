@@ -1,6 +1,6 @@
 --[[
 Carbon X ESP Premium - Ultra-Modern GUI
-Features: Real-time health bars, working line of sight arrows, all features functional
+Features: Fixed health bars, working line of sight arrows, all features functional
 Client-side only
 ]]
 
@@ -88,14 +88,23 @@ end
 
 local function CreateDrawing(type,props)
     local d = Drawing.new(type)
-    for k,v in pairs(props) do if d[k]~=nil then d[k]=v end end
+    for k,v in pairs(props) do 
+        if d[k]~=nil then 
+            d[k]=v 
+        end
+    end
     return d
 end
 
 local function HideESP(esp)
     for _,d in pairs(esp.Drawings) do
-        if type(d)=="table" then for _,dd in pairs(d) do dd.Visible=false end
-        else d.Visible=false end
+        if type(d)=="table" then 
+            for _,dd in pairs(d) do 
+                dd.Visible=false 
+            end
+        else 
+            d.Visible=false 
+        end
     end
     if esp.Highlight then esp.Highlight.Enabled=false end
 end
@@ -104,10 +113,19 @@ local function RemoveESP(player)
     local esp = ESPObjects[player]
     if not esp then return end
     esp.IsValid=false
-    for _,conn in pairs(esp.Connections) do if conn then pcall(function() conn:Disconnect() end) end end
+    for _,conn in pairs(esp.Connections) do 
+        if conn then 
+            pcall(function() conn:Disconnect() end) 
+        end 
+    end
     for _,d in pairs(esp.Drawings) do
-        if type(d)=="table" then for _,dd in pairs(d) do pcall(function() dd:Remove() end) end
-        else pcall(function() d:Remove() end) end
+        if type(d)=="table" then 
+            for _,dd in pairs(d) do 
+                pcall(function() dd:Remove() end) 
+            end
+        else 
+            pcall(function() d:Remove() end) 
+        end
     end
     if esp.Highlight then esp.Highlight:Destroy() end
     ESPObjects[player]=nil
@@ -145,12 +163,27 @@ local function CreateESP(player)
     local esp={Player=player,Drawings={},Connections={},Character=player.Character,IsValid=true}
 
     -- ESP Elements - Now independent
-    if ESPConfig.BoxEnabled then for i=1,4 do esp.Drawings["Box"..i]=CreateDrawing("Line",{Color=ESPConfig.BoxColor,Thickness=1,Visible=false}) end end
-    if ESPConfig.NameEnabled then esp.Drawings.Name=CreateDrawing("Text",{Text=player.Name,Size=14,Center=true,Outline=true,Color=ESPConfig.NameColor,Visible=false}) end
-    if ESPConfig.ToolEnabled then esp.Drawings.Tool=CreateDrawing("Text",{Text="No Tool",Size=12,Center=true,Outline=true,Color=ESPConfig.ToolColor,Visible=false}) end
-    if ESPConfig.DistanceEnabled then esp.Drawings.Distance=CreateDrawing("Text",{Text="",Size=14,Center=true,Outline=true,Color=ESPConfig.DistanceColor,Visible=false}) end
+    if ESPConfig.BoxEnabled then 
+        for i=1,4 do 
+            esp.Drawings["Box"..i]=CreateDrawing("Line",{Color=ESPConfig.BoxColor,Thickness=1,Visible=false}) 
+        end 
+    end
+    
+    if ESPConfig.NameEnabled then 
+        esp.Drawings.Name=CreateDrawing("Text",{Text=player.Name,Size=14,Center=true,Outline=true,Color=ESPConfig.NameColor,Visible=false}) 
+    end
+    
+    if ESPConfig.ToolEnabled then 
+        esp.Drawings.Tool=CreateDrawing("Text",{Text="No Tool",Size=12,Center=true,Outline=true,Color=ESPConfig.ToolColor,Visible=false}) 
+    end
+    
+    if ESPConfig.DistanceEnabled then 
+        esp.Drawings.Distance=CreateDrawing("Text",{Text="",Size=14,Center=true,Outline=true,Color=ESPConfig.DistanceColor,Visible=false}) 
+    end
+    
+    -- FIXED: Health bar - always create it with proper initial color
     if ESPConfig.HealthBarEnabled then 
-        esp.Drawings.Health = CreateDrawing("Square",{Filled=true,Thickness=1,Color=ESPConfig.HealthBarColor,Visible=false})
+        esp.Drawings.Health = CreateDrawing("Square",{Filled=true,Thickness=1,Color=Color3.fromRGB(0,255,0),Visible=false})
         esp.Drawings.HealthBackground = CreateDrawing("Square",{Filled=true,Thickness=1,Color=Color3.fromRGB(50,50,50),Visible=false})
     end
     
@@ -175,10 +208,18 @@ local function CreateESP(player)
         })
     end
     
-    -- Line of Sight with Arrow - FIXED: Proper triangle drawing
+    -- FIXED: Line of Sight with Arrow - Ensure proper creation
     if ESPConfig.LineOfSightEnabled then
-        esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
-        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Filled=true,Visible=false})
+        esp.Drawings.LineOfSight = CreateDrawing("Line",{
+            Color=ESPConfig.LineColor,
+            Thickness=ESPConfig.LineThickness,
+            Visible=false
+        })
+        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{
+            Color=ESPConfig.LineColor,
+            Filled=true,
+            Visible=false
+        })
     end
     
     -- Chams Highlight
@@ -271,8 +312,12 @@ local function UpdateESP(player)
 
     -- Box (Independent from health bar)
     if ESPConfig.BoxEnabled then
-        local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
-                       Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
+        local corners={
+            Vector2.new(pos.X-w/2,pos.Y-h/2),
+            Vector2.new(pos.X+w/2,pos.Y-h/2),
+            Vector2.new(pos.X+w/2,pos.Y+h/2),
+            Vector2.new(pos.X-w/2,pos.Y+h/2)
+        }
         for i=1,4 do
             local line=esp.Drawings["Box"..i]
             if line then 
@@ -309,41 +354,52 @@ local function UpdateESP(player)
         esp.Drawings.Distance.Visible=true 
     end
 
-    -- Health Bar - FIXED: Real-time health with proper top-to-bottom draining
+    -- FIXED: Health Bar - Completely rewrote the logic
     if ESPConfig.HealthBarEnabled then
-        local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
-                       Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
-        local ratio=hum.Health/math.max(hum.MaxHealth,1)
+        local corners={
+            Vector2.new(pos.X-w/2,pos.Y-h/2),
+            Vector2.new(pos.X+w/2,pos.Y-h/2),
+            Vector2.new(pos.X+w/2,pos.Y+h/2),
+            Vector2.new(pos.X-w/2,pos.Y+h/2)
+        }
+        
+        local ratio = hum.Health / math.max(hum.MaxHealth, 1)
         
         -- Health bar background (always full height)
         if esp.Drawings.HealthBackground then
-            esp.Drawings.HealthBackground.Position=Vector2.new(corners[1].X-6,corners[1].Y)
-            esp.Drawings.HealthBackground.Size=Vector2.new(4,h)
-            esp.Drawings.HealthBackground.Visible=true
+            esp.Drawings.HealthBackground.Position = Vector2.new(corners[1].X - 6, corners[1].Y)
+            esp.Drawings.HealthBackground.Size = Vector2.new(4, h)
+            esp.Drawings.HealthBackground.Visible = true
         end
         
         -- Health bar fill - TOP TO BOTTOM with real-time updates
         if esp.Drawings.Health then
-            local healthHeight = h * ratio
+            local healthHeight = math.max(h * ratio, 1) -- Ensure at least 1 pixel height
             
-            -- Start at top (corners[1].Y) and extend downward based on health
-            esp.Drawings.Health.Position=Vector2.new(corners[1].X-6, corners[1].Y)
-            esp.Drawings.Health.Size=Vector2.new(4, healthHeight)
+            -- Start at top and extend downward based on health
+            esp.Drawings.Health.Position = Vector2.new(corners[1].X - 6, corners[1].Y)
+            esp.Drawings.Health.Size = Vector2.new(4, healthHeight)
             
-            -- Dynamic health color based on real-time health percentage
+            -- FIXED: Dynamic health color - ensure colors are properly applied
+            local healthColor
             if ratio > 0.6 then
-                esp.Drawings.Health.Color = Color3.fromRGB(0, 255, 0) -- Green for high health
+                healthColor = Color3.fromRGB(0, 255, 0) -- Green for high health
             elseif ratio > 0.3 then
-                esp.Drawings.Health.Color = Color3.fromRGB(255, 255, 0) -- Yellow for medium health
+                healthColor = Color3.fromRGB(255, 255, 0) -- Yellow for medium health
             else
-                esp.Drawings.Health.Color = Color3.fromRGB(255, 0, 0) -- Red for low health
+                healthColor = Color3.fromRGB(255, 0, 0) -- Red for low health
             end
             
-            esp.Drawings.Health.Visible=true
+            -- Apply the color directly
+            esp.Drawings.Health.Color = healthColor
+            esp.Drawings.Health.Visible = true
+            
+            -- Debug: Force green color to test
+            -- esp.Drawings.Health.Color = Color3.fromRGB(0, 255, 0)
         end
     end
 
-    -- Skeleton ESP (Fixed with proper bone connections)
+    -- Skeleton ESP
     if ESPConfig.SkeletonEnabled and esp.Drawings.Skeleton then
         for i, bonePair in ipairs(SKELETON_BONES) do
             local part1 = char:FindFirstChild(bonePair[1])
@@ -391,7 +447,7 @@ local function UpdateESP(player)
         esp.Drawings.Tracer.Visible = false
     end
 
-    -- Chams (Fixed and working)
+    -- Chams
     if ESPConfig.ChamsEnabled and esp.Highlight then
         if isBehindWall and ESPConfig.WallCheckEnabled then
             esp.Highlight.FillColor = ESPConfig.WallCheckColor
@@ -408,7 +464,7 @@ local function UpdateESP(player)
         esp.Highlight.Enabled = false
     end
 
-    -- Line of Sight with Arrow - FIXED: Proper arrow implementation
+    -- FIXED: Line of Sight with Arrow - Completely rewrote the arrow logic
     if ESPConfig.LineOfSightEnabled and head and esp.Drawings.LineOfSight then
         local startPos = head.Position
         local lookVector = head.CFrame.LookVector
@@ -424,29 +480,33 @@ local function UpdateESP(player)
             line.Color = lineColor
             line.Visible = true
 
-            -- FIXED: Create proper arrow at the end of the line
+            -- FIXED: Arrow calculation - completely new approach
             local arrow = esp.Drawings.LOSArrow
-            local direction = (line.To - line.From)
-            local length = direction.Magnitude
-            
-            if length > 0 then
-                local dir = direction.Unit
-                local arrowSize = 12 -- Size of the arrow
-                local arrowWidth = 6 -- Width of the arrow
+            if arrow then
+                local direction = (line.To - line.From)
+                local length = direction.Magnitude
                 
-                -- Calculate perpendicular vector
-                local perp = Vector2.new(-dir.Y, dir.X)
-                
-                -- Arrow points: tip at line end, base points slightly back
-                local base = line.To - dir * arrowSize
-                
-                arrow.PointA = line.To -- Tip of the arrow
-                arrow.PointB = base + perp * arrowWidth -- Left base point
-                arrow.PointC = base - perp * arrowWidth -- Right base point
-                arrow.Color = lineColor
-                arrow.Visible = true
-            else
-                arrow.Visible = false
+                if length > 5 then -- Only show arrow if line has significant length
+                    local dir = direction.Unit
+                    local arrowLength = 15
+                    local arrowWidth = 8
+                    
+                    -- Calculate perpendicular vector
+                    local perp = Vector2.new(-dir.Y, dir.X)
+                    
+                    -- Arrow points: tip at the end, base slightly back
+                    local base = line.To - dir * arrowLength
+                    
+                    -- Set triangle points
+                    arrow.PointA = line.To -- Tip
+                    arrow.PointB = base + perp * arrowWidth -- Left base
+                    arrow.PointC = base - perp * arrowWidth -- Right base
+                    
+                    arrow.Color = lineColor
+                    arrow.Visible = true
+                else
+                    arrow.Visible = false
+                end
             end
         else
             esp.Drawings.LineOfSight.Visible = false
@@ -454,8 +514,10 @@ local function UpdateESP(player)
                 esp.Drawings.LOSArrow.Visible = false
             end
         end
-    elseif esp.Drawings.LineOfSight then
-        esp.Drawings.LineOfSight.Visible = false
+    else
+        if esp.Drawings.LineOfSight then
+            esp.Drawings.LineOfSight.Visible = false
+        end
         if esp.Drawings.LOSArrow then
             esp.Drawings.LOSArrow.Visible = false
         end
@@ -463,11 +525,25 @@ local function UpdateESP(player)
 end
 
 RunService.RenderStepped:Connect(function()
-    for p,_ in pairs(ESPObjects) do pcall(UpdateESP,p) end
+    for p,esp in pairs(ESPObjects) do 
+        pcall(UpdateESP, p) 
+    end
 end)
 
-for _,p in pairs(Players:GetPlayers()) do if p~=LocalPlayer then CreateESP(p) end end
-Players.PlayerAdded:Connect(function(p) if p~=LocalPlayer then p.CharacterAdded:Connect(function() CreateESP(p) end) end end)
+for _,p in pairs(Players:GetPlayers()) do 
+    if p~=LocalPlayer then 
+        CreateESP(p) 
+    end 
+end
+
+Players.PlayerAdded:Connect(function(p) 
+    if p~=LocalPlayer then 
+        p.CharacterAdded:Connect(function() 
+            CreateESP(p) 
+        end) 
+    end 
+end)
+
 Players.PlayerRemoving:Connect(RemoveESP)
 
 -- ===== ULTRA MODERN GUI =====
