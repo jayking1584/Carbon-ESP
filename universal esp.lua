@@ -244,7 +244,7 @@ local function IsPlayerVisible(character, targetPart, distance)
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     raycastParams.FilterDescendantsInstances = {character, CurrentCamera}
     if LocalPlayer.Character then
-        raycastParams.FilterDescendantsInstances[#raycastParams.FilterDescendantsInstances + 1] = LocalPlayer.Character
+        table.insert(raycastParams.FilterDescendantsInstances, LocalPlayer.Character)
     end
     
     local raycastResult = Workspace:Raycast(cameraPos, (targetPos - cameraPos).Unit * (targetPos - cameraPos).Magnitude, raycastParams)
@@ -795,11 +795,17 @@ end
 
 -- Enhanced GUI with Font Selection and Line of Sight
 local function CreateEnhancedGUI()
+    -- Check if GUI already exists
+    if CoreGui:FindFirstChild("CarbonESP") then
+        CoreGui:FindFirstChild("CarbonESP"):Destroy()
+    end
+    
     local CarbonESP = Instance.new("ScreenGui")
     CarbonESP.Name = "CarbonESP"
     CarbonESP.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     CarbonESP.ResetOnSpawn = false
     CarbonESP.DisplayOrder = 10
+    CarbonESP.IgnoreGuiInset = true
     
     -- Adjust sizes for additional content
     local frameWidth = IsMobile and 420 or 400
@@ -1616,7 +1622,26 @@ end
 
 -- Initialize ESP
 local function InitializeESP()
-    CreateEnhancedGUI()
+    -- Create GUI first
+    local success, err = pcall(CreateEnhancedGUI)
+    if not success then
+        warn("GUI Creation Error: " .. err)
+        -- Try again with a simpler approach
+        local simpleGUI = Instance.new("ScreenGui")
+        simpleGUI.Name = "CarbonESP"
+        simpleGUI.Parent = CoreGui
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0, 200, 0, 50)
+        label.Position = UDim2.new(0, 20, 0, 20)
+        label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.Text = "Carbon ESP Loaded (Simple Mode)"
+        label.Parent = simpleGUI
+    else
+        print("Carbon ESP GUI created successfully!")
+    end
+    
     InitializePlayerMonitoring()
     Connections.RenderStepped = RunService.RenderStepped:Connect(ESPLoop)
     
@@ -1649,7 +1674,23 @@ local function CleanupESP()
     print("Carbon's ESP cleaned up")
 end
 
--- Initialize
-InitializeESP()
+-- Initialize with error handling
+local success, err = pcall(InitializeESP)
+if not success then
+    warn("ESP Initialization Error: " .. err)
+    -- Create a simple notification that ESP failed to load
+    local errorGUI = Instance.new("ScreenGui")
+    errorGUI.Name = "CarbonESPError"
+    errorGUI.Parent = CoreGui
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 300, 0, 60)
+    label.Position = UDim2.new(0, 20, 0, 20)
+    label.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Text = "Carbon ESP Failed to Load:\n" .. err
+    label.TextWrapped = true
+    label.Parent = errorGUI
+end
 
 return CleanupESP
