@@ -1,6 +1,6 @@
 --[[
 Carbon X ESP Premium - Ultra-Modern GUI
-Features: Real-time health bars, proper line of sight arrows, all features functional
+Features: Real-time health bars, working line of sight arrows, all features functional
 Client-side only
 ]]
 
@@ -175,7 +175,7 @@ local function CreateESP(player)
         })
     end
     
-    -- Line of Sight with Arrow
+    -- Line of Sight with Arrow - FIXED: Proper triangle drawing
     if ESPConfig.LineOfSightEnabled then
         esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
         esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Filled=true,Visible=false})
@@ -309,32 +309,34 @@ local function UpdateESP(player)
         esp.Drawings.Distance.Visible=true 
     end
 
-    -- Health Bar (Now completely independent with real-time health)
+    -- Health Bar - FIXED: Real-time health with proper top-to-bottom draining
     if ESPConfig.HealthBarEnabled then
         local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
                        Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
         local ratio=hum.Health/math.max(hum.MaxHealth,1)
         
-        -- Health bar background
+        -- Health bar background (always full height)
         if esp.Drawings.HealthBackground then
             esp.Drawings.HealthBackground.Position=Vector2.new(corners[1].X-6,corners[1].Y)
             esp.Drawings.HealthBackground.Size=Vector2.new(4,h)
             esp.Drawings.HealthBackground.Visible=true
         end
         
-        -- Health bar fill with real-time health
+        -- Health bar fill - TOP TO BOTTOM with real-time updates
         if esp.Drawings.Health then
             local healthHeight = h * ratio
-            esp.Drawings.Health.Position=Vector2.new(corners[1].X-6,corners[1].Y + (h - healthHeight))
-            esp.Drawings.Health.Size=Vector2.new(4,healthHeight)
             
-            -- Dynamic health color based on health percentage
+            -- Start at top (corners[1].Y) and extend downward based on health
+            esp.Drawings.Health.Position=Vector2.new(corners[1].X-6, corners[1].Y)
+            esp.Drawings.Health.Size=Vector2.new(4, healthHeight)
+            
+            -- Dynamic health color based on real-time health percentage
             if ratio > 0.6 then
-                esp.Drawings.Health.Color = Color3.fromRGB(0, 255, 0) -- Green
+                esp.Drawings.Health.Color = Color3.fromRGB(0, 255, 0) -- Green for high health
             elseif ratio > 0.3 then
-                esp.Drawings.Health.Color = Color3.fromRGB(255, 255, 0) -- Yellow
+                esp.Drawings.Health.Color = Color3.fromRGB(255, 255, 0) -- Yellow for medium health
             else
-                esp.Drawings.Health.Color = Color3.fromRGB(255, 0, 0) -- Red
+                esp.Drawings.Health.Color = Color3.fromRGB(255, 0, 0) -- Red for low health
             end
             
             esp.Drawings.Health.Visible=true
@@ -376,7 +378,7 @@ local function UpdateESP(player)
         end
     end
 
-    -- Tracers (New Feature)
+    -- Tracers
     if ESPConfig.TracersEnabled and esp.Drawings.Tracer then
         local tracerStart = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
         local tracerEnd = Vector2.new(pos.X, pos.Y)
@@ -406,7 +408,7 @@ local function UpdateESP(player)
         esp.Highlight.Enabled = false
     end
 
-    -- Line of Sight with Arrow (Fixed - Proper arrow at tip)
+    -- Line of Sight with Arrow - FIXED: Proper arrow implementation
     if ESPConfig.LineOfSightEnabled and head and esp.Drawings.LineOfSight then
         local startPos = head.Position
         local lookVector = head.CFrame.LookVector
@@ -422,28 +424,41 @@ local function UpdateESP(player)
             line.Color = lineColor
             line.Visible = true
 
-            -- Create proper arrow at the end of the line
+            -- FIXED: Create proper arrow at the end of the line
             local arrow = esp.Drawings.LOSArrow
-            local dir = (line.To - line.From).Unit
-            local length = 15 -- Arrow size
-            local width = 8   -- Arrow width
+            local direction = (line.To - line.From)
+            local length = direction.Magnitude
             
-            -- Calculate arrow points
-            local back = line.To - dir * length
-            local perp = Vector2.new(-dir.Y, dir.X)
-            
-            arrow.PointA = line.To
-            arrow.PointB = back + perp * width
-            arrow.PointC = back - perp * width
-            arrow.Color = lineColor
-            arrow.Visible = true
+            if length > 0 then
+                local dir = direction.Unit
+                local arrowSize = 12 -- Size of the arrow
+                local arrowWidth = 6 -- Width of the arrow
+                
+                -- Calculate perpendicular vector
+                local perp = Vector2.new(-dir.Y, dir.X)
+                
+                -- Arrow points: tip at line end, base points slightly back
+                local base = line.To - dir * arrowSize
+                
+                arrow.PointA = line.To -- Tip of the arrow
+                arrow.PointB = base + perp * arrowWidth -- Left base point
+                arrow.PointC = base - perp * arrowWidth -- Right base point
+                arrow.Color = lineColor
+                arrow.Visible = true
+            else
+                arrow.Visible = false
+            end
         else
             esp.Drawings.LineOfSight.Visible = false
-            esp.Drawings.LOSArrow.Visible = false
+            if esp.Drawings.LOSArrow then
+                esp.Drawings.LOSArrow.Visible = false
+            end
         end
     elseif esp.Drawings.LineOfSight then
         esp.Drawings.LineOfSight.Visible = false
-        esp.Drawings.LOSArrow.Visible = false
+        if esp.Drawings.LOSArrow then
+            esp.Drawings.LOSArrow.Visible = false
+        end
     end
 end
 
