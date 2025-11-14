@@ -1,6 +1,6 @@
 --[[
 Carbon X ESP Premium - Ultra-Modern GUI
-Features: Independent health bars, working chams, wall check, visibility check
+Features: Working skeleton ESP, improved line of sight with arrows, tracers, all features functional
 Client-side only
 ]]
 
@@ -24,6 +24,7 @@ local ESPConfig = {
     HealthBarEnabled=true,
     SkeletonEnabled=true,
     ChamsEnabled=true,
+    TracersEnabled=true,
     MaxDistance=500,
     BoxColor=Color3.fromRGB(255,0,0),
     NameColor=Color3.fromRGB(255,255,255),
@@ -32,6 +33,7 @@ local ESPConfig = {
     HealthBarColor=Color3.fromRGB(0,255,0),
     SkeletonColor=Color3.fromRGB(255,0,0),
     ChamsColor=Color3.fromRGB(255,0,0),
+    TracerColor=Color3.fromRGB(255,255,255),
     LineOfSightEnabled=true,
     LineColor=Color3.fromRGB(0,255,255),
     LineThickness=2,
@@ -111,6 +113,33 @@ local function RemoveESP(player)
     ESPObjects[player]=nil
 end
 
+-- Skeleton bone connections
+local SKELETON_BONES = {
+    -- Torso
+    {"Head", "UpperTorso"},
+    {"UpperTorso", "LowerTorso"},
+    
+    -- Left Arm
+    {"UpperTorso", "LeftUpperArm"},
+    {"LeftUpperArm", "LeftLowerArm"},
+    {"LeftLowerArm", "LeftHand"},
+    
+    -- Right Arm
+    {"UpperTorso", "RightUpperArm"},
+    {"RightUpperArm", "RightLowerArm"},
+    {"RightLowerArm", "RightHand"},
+    
+    -- Left Leg
+    {"LowerTorso", "LeftUpperLeg"},
+    {"LeftUpperLeg", "LeftLowerLeg"},
+    {"LeftLowerLeg", "LeftFoot"},
+    
+    -- Right Leg
+    {"LowerTorso", "RightUpperLeg"},
+    {"RightUpperLeg", "RightLowerLeg"},
+    {"RightLowerLeg", "RightFoot"}
+}
+
 local function CreateESP(player)
     if player==LocalPlayer or ESPObjects[player] then return end
     local esp={Player=player,Drawings={},Connections={},Character=player.Character,IsValid=true}
@@ -124,7 +153,29 @@ local function CreateESP(player)
         esp.Drawings.Health = CreateDrawing("Square",{Filled=true,Thickness=1,Color=ESPConfig.HealthBarColor,Visible=false})
         esp.Drawings.HealthBackground = CreateDrawing("Square",{Filled=true,Thickness=1,Color=Color3.fromRGB(50,50,50),Visible=false})
     end
-    if ESPConfig.SkeletonEnabled then esp.Drawings.Skeleton={} end
+    
+    -- Skeleton ESP - Create lines for all bones
+    if ESPConfig.SkeletonEnabled then
+        esp.Drawings.Skeleton = {}
+        for i, bonePair in ipairs(SKELETON_BONES) do
+            esp.Drawings.Skeleton[i] = CreateDrawing("Line", {
+                Color = ESPConfig.SkeletonColor,
+                Thickness = 2,
+                Visible = false
+            })
+        end
+    end
+    
+    -- Tracers
+    if ESPConfig.TracersEnabled then
+        esp.Drawings.Tracer = CreateDrawing("Line", {
+            Color = ESPConfig.TracerColor,
+            Thickness = 1,
+            Visible = false
+        })
+    end
+    
+    -- Line of Sight with Arrow
     if ESPConfig.LineOfSightEnabled then
         esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
         esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Thickness=1,Visible=false,Filled=true})
@@ -195,6 +246,7 @@ local function UpdateESP(player)
     local toolColor = ESPConfig.ToolColor
     local distanceColor = ESPConfig.DistanceColor
     local skeletonColor = ESPConfig.SkeletonColor
+    local tracerColor = ESPConfig.TracerColor
     local lineColor = ESPConfig.LineColor
     
     if ESPConfig.WallCheckEnabled and isBehindWall then
@@ -203,6 +255,7 @@ local function UpdateESP(player)
         toolColor = ESPConfig.WallCheckColor
         distanceColor = ESPConfig.WallCheckColor
         skeletonColor = ESPConfig.WallCheckColor
+        tracerColor = ESPConfig.WallCheckColor
         lineColor = ESPConfig.WallCheckColor
     end
     
@@ -212,6 +265,7 @@ local function UpdateESP(player)
         toolColor = ESPConfig.VisibilityCheckColor
         distanceColor = ESPConfig.VisibilityCheckColor
         skeletonColor = ESPConfig.VisibilityCheckColor
+        tracerColor = ESPConfig.VisibilityCheckColor
         lineColor = ESPConfig.VisibilityCheckColor
     end
 
@@ -277,6 +331,54 @@ local function UpdateESP(player)
         end
     end
 
+    -- Skeleton ESP (Fixed with proper bone connections)
+    if ESPConfig.SkeletonEnabled and esp.Drawings.Skeleton then
+        for i, bonePair in ipairs(SKELETON_BONES) do
+            local part1 = char:FindFirstChild(bonePair[1])
+            local part2 = char:FindFirstChild(bonePair[2])
+            
+            if part1 and part2 then
+                local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
+                local pos2, onScreen2 = Camera:WorldToViewportPoint(part2.Position)
+                
+                if onScreen1 and onScreen2 then
+                    local boneLine = esp.Drawings.Skeleton[i]
+                    boneLine.From = Vector2.new(pos1.X, pos1.Y)
+                    boneLine.To = Vector2.new(pos2.X, pos2.Y)
+                    boneLine.Color = skeletonColor
+                    boneLine.Visible = true
+                else
+                    if esp.Drawings.Skeleton[i] then
+                        esp.Drawings.Skeleton[i].Visible = false
+                    end
+                end
+            else
+                if esp.Drawings.Skeleton[i] then
+                    esp.Drawings.Skeleton[i].Visible = false
+                end
+            end
+        end
+    elseif esp.Drawings.Skeleton then
+        for i = 1, #SKELETON_BONES do
+            if esp.Drawings.Skeleton[i] then
+                esp.Drawings.Skeleton[i].Visible = false
+            end
+        end
+    end
+
+    -- Tracers (New Feature)
+    if ESPConfig.TracersEnabled and esp.Drawings.Tracer then
+        local tracerStart = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+        local tracerEnd = Vector2.new(pos.X, pos.Y)
+        
+        esp.Drawings.Tracer.From = tracerStart
+        esp.Drawings.Tracer.To = tracerEnd
+        esp.Drawings.Tracer.Color = tracerColor
+        esp.Drawings.Tracer.Visible = true
+    elseif esp.Drawings.Tracer then
+        esp.Drawings.Tracer.Visible = false
+    end
+
     -- Chams (Fixed and working)
     if ESPConfig.ChamsEnabled and esp.Highlight then
         if isBehindWall and ESPConfig.WallCheckEnabled then
@@ -294,7 +396,7 @@ local function UpdateESP(player)
         esp.Highlight.Enabled = false
     end
 
-    -- Line of Sight
+    -- Line of Sight with Arrow
     if ESPConfig.LineOfSightEnabled and head and esp.Drawings.LineOfSight then
         local startPos = head.Position
         local lookVector = head.CFrame.LookVector
@@ -309,6 +411,7 @@ local function UpdateESP(player)
             line.Color = lineColor
             line.Visible = true
 
+            -- Create arrow at the end of the line
             local arrow = esp.Drawings.LOSArrow
             local dirVec = (line.To - line.From).Unit
             local perp = Vector2.new(-dirVec.Y, dirVec.X)
@@ -648,13 +751,14 @@ CreateToggle("Distance Display", "DistanceEnabled", 4)
 CreateToggle("Health Bar", "HealthBarEnabled", 5)
 CreateToggle("Skeleton ESP", "SkeletonEnabled", 6)
 CreateToggle("Player Chams", "ChamsEnabled", 7)
-CreateToggle("Line of Sight", "LineOfSightEnabled", 8)
-CreateToggle("Wall Check", "WallCheckEnabled", 9)
-CreateToggle("Visibility Check", "VisibilityCheckEnabled", 10)
+CreateToggle("Tracers", "TracersEnabled", 8)
+CreateToggle("Line of Sight", "LineOfSightEnabled", 9)
+CreateToggle("Wall Check", "WallCheckEnabled", 10)
+CreateToggle("Visibility Check", "VisibilityCheckEnabled", 11)
 
-CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 11)
-CreateSlider("LOS Length", "LineLength", 10, 100, 25, 12)
-CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 13)
+CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 12)
+CreateSlider("LOS Length", "LineLength", 10, 100, 25, 13)
+CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 14)
 
 -- UI State management
 local isMinimized = false
