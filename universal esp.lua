@@ -1,5 +1,5 @@
 -- Carbon's Universal ESP - Enhanced GUI Edition
--- Fixed GUI Popup
+-- Fixed Text Features
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -614,7 +614,7 @@ local function UpdateESP(player, currentTime)
             if esp.Drawings.HealthBarOutline then esp.Drawings.HealthBarOutline.Visible = false end
         end
         
-        -- NAME TEXT (Independent)
+        -- FIXED: NAME TEXT - Shows from any distance, positioned above head
         if ESPConfig.NameEnabled then
             local nameDrawing = esp.Drawings.Name
             if nameDrawing then
@@ -622,7 +622,7 @@ local function UpdateESP(player, currentTime)
                 if head then
                     local headScreenPos = CurrentCamera:WorldToViewportPoint(head.Position)
                     if headScreenPos.Z > 0 then
-                        nameDrawing.Position = Vector2_new(headScreenPos.X, headScreenPos.Y - 45)
+                        nameDrawing.Position = Vector2_new(headScreenPos.X, headScreenPos.Y - 25)
                         nameDrawing.Text = player.Name
                         nameDrawing.Color = GetElementColor("Name", isVisible, player)
                         nameDrawing.Visible = true
@@ -637,7 +637,7 @@ local function UpdateESP(player, currentTime)
             if esp.Drawings.Name then esp.Drawings.Name.Visible = false end
         end
         
-        -- TOOL TEXT (Independent)
+        -- FIXED: TOOL TEXT - Shows from any distance, positioned above name
         if ESPConfig.ToolEnabled then
             local toolDrawing = esp.Drawings.Tool
             if toolDrawing then
@@ -646,7 +646,7 @@ local function UpdateESP(player, currentTime)
                     local headScreenPos = CurrentCamera:WorldToViewportPoint(head.Position)
                     if headScreenPos.Z > 0 then
                         local equippedTool = character:FindFirstChildOfClass("Tool")
-                        toolDrawing.Position = Vector2_new(headScreenPos.X, headScreenPos.Y - 30)
+                        toolDrawing.Position = Vector2_new(headScreenPos.X, headScreenPos.Y - 45)
                         toolDrawing.Text = equippedTool and "Tool: " .. equippedTool.Name or "No Tool"
                         toolDrawing.Color = GetElementColor("Tool", isVisible, player)
                         toolDrawing.Visible = true
@@ -661,13 +661,13 @@ local function UpdateESP(player, currentTime)
             if esp.Drawings.Tool then esp.Drawings.Tool.Visible = false end
         end
         
-        -- DISTANCE TEXT (Independent)
+        -- FIXED: DISTANCE TEXT - Shows from any distance, positioned under player box
         if ESPConfig.DistanceEnabled then
             local distanceDrawing = esp.Drawings.Distance
             if distanceDrawing then
                 local rootScreenPos = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
                 if rootScreenPos.Z > 0 then
-                    distanceDrawing.Position = Vector2_new(rootScreenPos.X, rootScreenPos.Y + 25)
+                    distanceDrawing.Position = Vector2_new(rootScreenPos.X, pos.Y + size.Y + 10)
                     distanceDrawing.Text = string_format("%.0f studs", distance)
                     distanceDrawing.Color = GetElementColor("Distance", isVisible, player)
                     distanceDrawing.Visible = true
