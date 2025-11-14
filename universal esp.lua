@@ -99,7 +99,7 @@ local function CreateESP(player)
     if ESPConfig.SkeletonEnabled then esp.Drawings.Skeleton={} end
     if ESPConfig.LineOfSightEnabled then
         esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
-        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Thickness=1,Visible=false})
+        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Thickness=1,Visible=false,Filled=true})
     end
 
     esp.Connections.CharacterAdded=player.CharacterAdded:Connect(function(char)
@@ -167,13 +167,15 @@ local function UpdateESP(player)
             line.To = Vector2.new(end2D.X, end2D.Y)
             line.Visible = true
 
+            -- Create arrow at the end of the line
             local arrow = esp.Drawings.LOSArrow
             local dirVec = (line.To - line.From).Unit
             local perp = Vector2.new(-dirVec.Y, dirVec.X)
-            local size = 6
+            local size = 8
             arrow.PointA = line.To
             arrow.PointB = line.To - dirVec*size + perp*size*0.5
             arrow.PointC = line.To - dirVec*size - perp*size*0.5
+            arrow.Color = ESPConfig.LineColor
             arrow.Visible = true
         else
             esp.Drawings.LineOfSight.Visible = false
@@ -246,15 +248,15 @@ Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
 local Subtitle = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -100, 1, 0)
-Title.Position = UDim2.new(0, 20, 0, 25)
-Title.BackgroundTransparency = 1
-Title.Text = "Premium Edition"
-Title.TextColor3 = Color3.fromRGB(200, 200, 200)
-Title.Font = Enum.Font.Gotham
-Title.TextSize = 14
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Header
+Subtitle.Size = UDim2.new(1, -100, 1, 0)
+Subtitle.Position = UDim2.new(0, 20, 0, 25)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "Premium Edition"
+Subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+Subtitle.Font = Enum.Font.Gotham
+Subtitle.TextSize = 14
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.Parent = Header
 
 -- Control buttons container
 local ControlButtons = Instance.new("Frame")
@@ -459,9 +461,10 @@ local function CreateSlider(label, configKey, min, max, defaultValue, order)
     KnobCorner.CornerRadius = UDim.new(0, 8)
     KnobCorner.Parent = Knob
     
-    -- Slider button
+    -- Slider button (covers the entire track for easier clicking)
     local SliderButton = Instance.new("TextButton")
-    SliderButton.Size = UDim2.new(1, 0, 1, 0)
+    SliderButton.Size = UDim2.new(1, 0, 2, 0) -- Make it taller for easier clicking
+    SliderButton.Position = UDim2.new(0, 0, -0.5, 0)
     SliderButton.BackgroundTransparency = 1
     SliderButton.Text = ""
     SliderButton.Parent = Track
@@ -490,15 +493,15 @@ local function CreateSlider(label, configKey, min, max, defaultValue, order)
         end
     end)
     
-    SliderButton.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             updateSlider(input)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
         end
     end)
     
@@ -515,27 +518,35 @@ CreateToggle("Skeleton ESP", "SkeletonEnabled", 6)
 CreateToggle("Player Chams", "ChamsEnabled", 7)
 CreateToggle("Line of Sight", "LineOfSightEnabled", 8)
 
-CreateSlider("Max Distance", "MaxDistance", 50, 1000, 500, 9)
+CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 9)
 CreateSlider("LOS Length", "LineLength", 10, 100, 25, 10)
 CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 11)
 
 -- UI State management
 local isMinimized = false
 local originalSize = Main.Size
-local minimizedSize = UDim2.new(0, 450, 0, 60)
+local originalContentVisibility = true
 
 Minimize.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     
     if isMinimized then
-        local tween = TweenService:Create(Main, tweenInfo, {Size = minimizedSize})
+        -- Hide everything except header and show restore button
+        Content.Visible = false
+        Shadow.Visible = false
+        local tween = TweenService:Create(Main, tweenInfo, {Size = UDim2.new(0, 450, 0, 60)})
         tween:Play()
         Minimize.Text = "+"
+        Minimize.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
     else
+        -- Show everything and change back to minimize button
+        Content.Visible = true
+        Shadow.Visible = true
         local tween = TweenService:Create(Main, tweenInfo, {Size = originalSize})
         tween:Play()
         Minimize.Text = "_"
+        Minimize.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
     end
 end)
 
@@ -546,7 +557,7 @@ Close.MouseButton1Click:Connect(function()
     
     tween.Completed:Connect(function()
         GUI:Destroy()
-    end)
+    end
 end)
 
 -- Auto-adjust canvas size
