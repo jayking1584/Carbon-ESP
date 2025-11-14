@@ -1,8 +1,3 @@
---[[
-Carbon X ESP Premium - Ultra-Modern GUI
-Features: Sleek dark theme, animated toggles, modern sliders, movable/hideable interface
-Client-side only
-]]
 
 -- ===== SERVICES =====
 local Players = game:GetService("Players")
