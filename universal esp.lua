@@ -245,18 +245,8 @@ Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 20
 Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextYAlignment = Enum.TextYAlignment.Center
 Title.Parent = Header
-
-local Subtitle = Instance.new("TextLabel")
-Subtitle.Size = UDim2.new(1, -100, 1, 0)
-Subtitle.Position = UDim2.new(0, 20, 0, 25)
-Subtitle.BackgroundTransparency = 1
-Subtitle.Text = "Premium Edition"
-Subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
-Subtitle.Font = Enum.Font.Gotham
-Subtitle.TextSize = 14
-Subtitle.TextXAlignment = Enum.TextXAlignment.Left
-Subtitle.Parent = Header
 
 -- Control buttons container
 local ControlButtons = Instance.new("Frame")
@@ -461,10 +451,10 @@ local function CreateSlider(label, configKey, min, max, defaultValue, order)
     KnobCorner.CornerRadius = UDim.new(0, 8)
     KnobCorner.Parent = Knob
     
-    -- Slider button (covers the entire track for easier clicking)
+    -- Improved slider button for mobile and desktop
     local SliderButton = Instance.new("TextButton")
-    SliderButton.Size = UDim2.new(1, 0, 2, 0) -- Make it taller for easier clicking
-    SliderButton.Position = UDim2.new(0, 0, -0.5, 0)
+    SliderButton.Size = UDim2.new(1, 0, 3, 0) -- Even taller for mobile touch
+    SliderButton.Position = UDim2.new(0, 0, -1, 0)
     SliderButton.BackgroundTransparency = 1
     SliderButton.Text = ""
     SliderButton.Parent = Track
@@ -486,21 +476,22 @@ local function CreateSlider(label, configKey, min, max, defaultValue, order)
         knobTween:Play()
     end
     
+    -- Universal input handling for both mouse and touch
     SliderButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             updateSlider(input)
         end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             updateSlider(input)
         end
     end)
     
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
             dragging = false
         end
     end)
@@ -525,7 +516,6 @@ CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 11)
 -- UI State management
 local isMinimized = false
 local originalSize = Main.Size
-local originalContentVisibility = true
 
 Minimize.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
@@ -557,7 +547,7 @@ Close.MouseButton1Click:Connect(function()
     
     tween.Completed:Connect(function()
         GUI:Destroy()
-    end) -- FIXED: Added missing closing parenthesis here
+    end)
 end)
 
 -- Auto-adjust canvas size
