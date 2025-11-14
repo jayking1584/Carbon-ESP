@@ -1,5 +1,5 @@
--- Carbon's Universal ESP - Enhanced GUI Edition
--- Fixed Text Features
+-- Carbon's Universal ESP - Fixed & Hardened Version
+-- Merged fixes: bounding box, safe creation, stable GUI toggles, chams, tool detection, and protected update loop
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -25,10 +25,10 @@ local CFrame_new = CFrame.new
 local ipairs = ipairs
 local pairs = pairs
 local string_format = string.format
+local tick = tick
 
--- Creative ESP Configuration
+-- ESP configuration
 local ESPConfig = {
-    -- Feature Toggles
     BoxEnabled = true,
     TracerEnabled = true,
     NameEnabled = true,
@@ -39,14 +39,12 @@ local ESPConfig = {
     ChamsEnabled = false,
     HealthBarEnabled = true,
     LineOfSightEnabled = true,
-    
-    -- Performance Settings
-    UpdateRate = 60,
+
+    UpdateRate = 30,          -- updates per second per ESP object (not per frame)
     MaxDistance = 1000,
     LODDistance = 200,
     LineOfSightDistance = 50,
-    
-    -- Creative Colors for ESP Elements
+
     BoxColor = Color3_fromRGB(0, 255, 255),
     TracerColor = Color3_fromRGB(255, 255, 255),
     NameColor = Color3_fromRGB(100, 150, 255),
@@ -56,1012 +54,638 @@ local ESPConfig = {
     HealthBarColor = Color3_fromRGB(0, 255, 0),
     ChamsColor = Color3_fromRGB(0, 255, 100),
     LineOfSightColor = Color3_fromRGB(255, 50, 150),
-    
-    -- Sizes
+
     BoxThickness = 1,
     TracerThickness = 1,
     SkeletonThickness = 1,
     HealthBarWidth = 6,
     HealthBarOffset = 12,
     LineOfSightThickness = 2,
-    
-    -- Text
+
     TextSize = 14,
-    TextFont = Enum.Font.Gotham,
+    TextFont = Enum.Font.Gotham
 }
 
--- Updated Font Options - Only working Roblox fonts
-local FONT_OPTIONS = {
-    {"Gotham", Enum.Font.Gotham, "Clean modern font (Default)"},
-    {"Arial", Enum.Font.Arial, "Standard Arial font"},
-    {"SourceSans", Enum.Font.SourceSans, "Source Sans font"},
-    {"SciFi", Enum.Font.SciFi, "SciFi style font"},
-    {"Code", Enum.Font.Code, "Monospace code font"}
-}
-
--- ESP Storage
-local ESPObjects = {}
-local Connections = {}
+-- Globals
+local ESPObjects = {}   -- player -> esp data
+local Connections = {}  -- general connections
 local LastUpdate = 0
 local FrameCount = 0
 local CleanupQueue = {}
+local RenderConnection = nil
 
--- Mobile compatibility
-local IsMobile = UserInputService.TouchEnabled
-local IsConsole = UserInputService.GamepadEnabled
-local IsDesktop = not IsMobile and not IsConsole
-
--- GUI State
-local GUIEnabled = true
-local IsGUIVisible = true
-local IsDragging = false
-local DragStart, StartPosition
-
--- Slider States
-local isFontSliding = false
-local isDistanceSliding = false
-local isLOSSizing = false
-
--- Creative Color Palette for GUI
-local CreativeColors = {
-    Primary = Color3_fromRGB(25, 25, 35),
-    Secondary = Color3_fromRGB(40, 40, 55),
-    Accent = Color3_fromRGB(0, 150, 255),
-    Accent2 = Color3_fromRGB(0, 200, 150),
-    Text = Color3_fromRGB(240, 240, 255),
-    Success = Color3_fromRGB(0, 230, 100),
-    Warning = Color3_fromRGB(255, 180, 0),
-    Danger = Color3_fromRGB(255, 80, 80),
-    Purple = Color3_fromRGB(180, 100, 255),
-    Gold = Color3_fromRGB(255, 215, 0)
-}
-
--- Bone connections for skeleton ESP
-local BONE_CONNECTIONS = {
-    {"Head", "UpperTorso"},
-    {"UpperTorso", "LowerTorso"},
-    {"UpperTorso", "LeftUpperArm"},
-    {"LeftUpperArm", "LeftLowerArm"},
-    {"LeftLowerArm", "LeftHand"},
-    {"UpperTorso", "RightUpperArm"},
-    {"RightUpperArm", "RightLowerArm"},
-    {"RightLowerArm", "RightHand"},
-    {"LowerTorso", "LeftUpperLeg"},
-    {"LeftUpperLeg", "LeftLowerLeg"},
-    {"LeftLowerLeg", "LeftFoot"},
-    {"LowerTorso", "RightUpperLeg"},
-    {"RightUpperLeg", "RightLowerLeg"},
-    {"RightUpperLeg", "RightFoot"}
-}
-
--- Body parts for Chams
-local CHAMS_PARTS = {
-    "Head", "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm",
-    "RightUpperArm", "RightLowerArm", "LeftUpperLeg", "LeftLowerLeg",
-    "RightUpperLeg", "RightLowerLeg"
-}
-
--- Improved drawing object creation with validation
-local function CreateDrawing(type, properties)
-    local drawing = Drawing.new(type)
-    for property, value in pairs(properties) do
-        if drawing[property] ~= nil then
-            drawing[property] = value
+-- Utility: protected Drawing creation
+local function SafeCreateDrawing(kind, props)
+    local ok, draw = pcall(function() return Drawing.new(kind) end)
+    if not ok or not draw then return nil end
+    if props then
+        for k, v in pairs(props) do
+            pcall(function()
+                draw[k] = v
+            end)
         end
     end
-    return drawing
+    return draw
 end
 
--- Safe get humanoid function
+-- Safe humanoid / root part getters
 local function GetHumanoid(character)
-    if character and character:IsDescendantOf(game) then
-        return character:FindFirstChildOfClass("Humanoid")
-    end
-    return nil
+    if not character or not character:IsDescendantOf(game) then return nil end
+    return character:FindFirstChildOfClass("Humanoid")
 end
 
--- Safe get root part function
 local function GetRootPart(character)
-    if character and character:IsDescendantOf(game) then
-        return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-    end
-    return nil
+    if not character or not character:IsDescendantOf(game) then return nil end
+    return character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("UpperTorso")
+        or character:FindFirstChild("Torso")
 end
 
--- Enhanced cleanup system
-local function ProcessCleanupQueue()
-    for i = #CleanupQueue, 1, -1 do
-        local player = CleanupQueue[i]
-        if ESPObjects[player] then
-            RemoveESP(player)
-            CleanupQueue[i] = nil
-        end
-    end
-end
-
--- World-space bounding box calculation
+-- Stable bounding box: distance-scaled, positive sizes, safe checks
 local function GetBoundingBox(character)
-    if not character or not character:IsDescendantOf(Workspace) then
+    if not character or not character:IsDescendantOf(Workspace) then return nil end
+    local hrp = GetRootPart(character)
+    if not hrp then return nil end
+
+    local viewportPos, onScreen = CurrentCamera:WorldToViewportPoint(hrp.Position)
+    if not onScreen or viewportPos.Z <= 0 then
         return nil
     end
-    
-    local humanoidRootPart = GetRootPart(character)
-    local humanoid = GetHumanoid(character)
-    
-    if not humanoidRootPart or not humanoid then 
-        return nil 
-    end
-    
-    local rootPos, rootOnScreen = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
-    if not rootOnScreen then return nil end
-    
-    -- Get head position for height calculation
-    local head = character:FindFirstChild("Head")
-    local headPos = rootPos
-    if head then
-        headPos = CurrentCamera:WorldToViewportPoint(head.Position)
-    end
-    
-    -- Calculate proper vertical box dimensions in world space
-    local height = math_max(30, (rootPos.Y - headPos.Y) * 2.2)
-    local width = height * 0.4
-    
-    -- Calculate box position (centered on character)
-    local boxX = rootPos.X - width / 2
-    local boxY = headPos.Y - height * 0.1
-    
+
+    -- distance scale (empirical)
+    local distance = (CurrentCamera.CFrame.Position - hrp.Position).Magnitude
+    local scale = math_clamp(distance / 28, 0.5, 12) -- clamp to safe range
+
+    -- default character proportions (works reliably)
+    local boxHeight = 5 * scale     -- world units scaled
+    local boxWidth = 2 * scale
+
+    -- convert height/width in screen space approx (using viewport zoom)
+    local screenHeight = boxHeight * (CurrentCamera.ViewportSize.Y / (40 * scale))
+    local screenWidth = boxWidth * (CurrentCamera.ViewportSize.X / (40 * scale))
+
+    -- guarantee minimum sizes
+    screenHeight = math_max(24, screenHeight)
+    screenWidth = math_max(10, screenWidth)
+
     return {
-        Position = Vector2_new(boxX, boxY),
-        Size = Vector2_new(width, height),
-        RootPosition = Vector2_new(rootPos.X, rootPos.Y),
-        HeadPosition = Vector2_new(headPos.X, headPos.Y)
+        Position = Vector2_new(viewportPos.X - screenWidth / 2, viewportPos.Y - screenHeight / 2),
+        Size = Vector2_new(screenWidth, screenHeight),
+        RootPosition = Vector2_new(viewportPos.X, viewportPos.Y)
     }
 end
 
--- Visibility check
+-- Visibility check using Raycast (safe)
 local function IsPlayerVisible(character, targetPart, distance)
-    if not ESPConfig.VisibilityCheck or distance > ESPConfig.LODDistance then 
-        return true 
-    end
-    
-    if not character or not targetPart or not character:IsDescendantOf(Workspace) then
-        return false
-    end
-    
+    if not ESPConfig.VisibilityCheck then return true end
+    if not character or not targetPart then return false end
+    if distance > ESPConfig.LODDistance then return true -- LOD: skip expensive raycast
     local cameraPos = CurrentCamera.CFrame.Position
-    local targetPos = targetPart.Position
-    
-    if (cameraPos - targetPos).Magnitude > ESPConfig.MaxDistance then
-        return false
-    end
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    local filterList = {character, CurrentCamera}
-    if LocalPlayer.Character then
-        table.insert(filterList, LocalPlayer.Character)
-    end
-    raycastParams.FilterDescendantsInstances = filterList
-    
-    local raycastResult = Workspace:Raycast(cameraPos, (targetPos - cameraPos).Unit * (targetPos - cameraPos).Magnitude, raycastParams)
-    return raycastResult == nil
+    if (cameraPos - targetPart.Position).Magnitude > ESPConfig.MaxDistance then return false
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {character, CurrentCamera, LocalPlayer.Character}
+    local result = Workspace:Raycast(cameraPos, (targetPart.Position - cameraPos), params)
+    return result == nil
 end
 
--- Creative color assignments for ESP elements
-local function GetElementColor(elementType, isVisible, player)
-    if not isVisible then
-        return Color3_fromRGB(255, 255, 0)
-    end
-    
-    if elementType == "Box" then
-        return ESPConfig.BoxColor
-    elseif elementType == "Tracer" then
-        return ESPConfig.TracerColor
-    elseif elementType == "Name" then
-        return ESPConfig.NameColor
-    elseif elementType == "Distance" then
-        return ESPConfig.DistanceColor
-    elseif elementType == "Tool" then
-        return ESPConfig.ToolColor
-    elseif elementType == "Skeleton" then
-        return ESPConfig.SkeletonColor
-    elseif elementType == "HealthBar" then
-        return ESPConfig.HealthBarColor
-    elseif elementType == "LineOfSight" then
-        return ESPConfig.LineOfSightColor
-    end
-    
+-- Color getters
+local function GetElementColor(elementType, isVisible)
+    if not isVisible then return Color3_fromRGB(255, 255, 0) end
+    if elementType == "Box" then return ESPConfig.BoxColor end
+    if elementType == "Tracer" then return ESPConfig.TracerColor end
+    if elementType == "Name" then return ESPConfig.NameColor end
+    if elementType == "Distance" then return ESPConfig.DistanceColor end
+    if elementType == "Tool" then return ESPConfig.ToolColor end
+    if elementType == "Skeleton" then return ESPConfig.SkeletonColor end
+    if elementType == "HealthBar" then return ESPConfig.HealthBarColor end
+    if elementType == "LineOfSight" then return ESPConfig.LineOfSightColor end
     return ESPConfig.BoxColor
 end
 
--- Health color with gradient
-local healthColorCache = {}
+-- Health color
 local function GetHealthColor(health, maxHealth)
-    local percentage = health / maxHealth
-    local cacheKey = math_floor(percentage * 100)
-    
-    if not healthColorCache[cacheKey] then
-        if percentage > 0.6 then
-            healthColorCache[cacheKey] = Color3_fromRGB(0, 255, 0)
-        elseif percentage > 0.3 then
-            healthColorCache[cacheKey] = Color3_fromRGB(255, 255, 0)
-        else
-            healthColorCache[cacheKey] = Color3_fromRGB(255, 0, 0)
-        end
-    end
-    
-    return healthColorCache[cacheKey]
+    local percentage = 0
+    if maxHealth and maxHealth > 0 then percentage = health / maxHealth end
+    if percentage > 0.6 then return Color3_fromRGB(0, 255, 0)
+    elseif percentage > 0.3 then return Color3_fromRGB(255, 255, 0)
+    else return Color3_fromRGB(255, 0, 0) end
 end
 
--- Enhanced ESP Removal
+-- Remove all ESP data for player
 local function RemoveESP(player)
     local esp = ESPObjects[player]
     if not esp then return end
-    
     esp.IsValid = false
-    
-    for name, connection in pairs(esp.Connections) do
-        if connection then
-            pcall(function() connection:Disconnect() end)
+
+    -- disconnect connections
+    for _, c in pairs(esp.Connections or {}) do
+        if c and c.Disconnect then
+            pcall(function() c:Disconnect() end)
         end
     end
-    
-    for name, drawing in pairs(esp.Drawings) do
-        if drawing then
-            pcall(function() drawing:Remove() end)
+
+    -- remove drawings
+    for _, d in pairs(esp.Drawings or {}) do
+        if d then
+            pcall(function() d:Remove() end)
         end
     end
-    
-    for name, cham in pairs(esp.Chams) do
-        if cham then
-            pcall(function() cham:Destroy() end)
-        end
+
+    -- destroy highlight if exists
+    if esp.Highlight and esp.Highlight.Destroy then
+        pcall(function() esp.Highlight:Destroy() end)
     end
-    
-    esp.Drawings = {}
-    esp.Chams = {}
-    esp.Connections = {}
-    
+
     ESPObjects[player] = nil
 end
 
--- Enhanced ESP Creation
+-- Create ESP for a player (safe)
 local function CreateESP(player)
-    if player == LocalPlayer or ESPObjects[player] then 
-        if ESPObjects[player] then
-            RemoveESP(player)
-        end
-        return 
-    end
-    
+    if not player or player == LocalPlayer or ESPObjects[player] then return end
+
     local esp = {
         Player = player,
         Drawings = {},
-        Chams = {},
         Connections = {},
         Character = nil,
         LastUpdate = 0,
         IsValid = true,
-        LastBoundingBox = nil
+        Highlight = nil
     }
-    
-    local drawingTypes = {}
-    
+
+    -- helper create drawing with default props
+    local function createIfAllowed(name, kind, props)
+        local d = esp.Drawings[name]
+        if d and d.Remove == nil then -- not a drawing (safety)
+            d = nil
+        end
+        if not d then
+            local success, created = pcall(SafeCreateDrawing, kind, props)
+            if success and created then
+                esp.Drawings[name] = created
+            end
+        end
+    end
+
+    -- Prepare drawing templates but only create what's enabled
     if ESPConfig.BoxEnabled then
         for i = 1, 4 do
-            drawingTypes["BoxLine"..i] = {"Line", {Thickness = ESPConfig.BoxThickness, Color = ESPConfig.BoxColor, Visible = false}}
+            createIfAllowed("BoxLine"..i, "Line", {Thickness = ESPConfig.BoxThickness, Color = ESPConfig.BoxColor, Visible = false})
         end
     end
-    
+
     if ESPConfig.TracerEnabled then
-        drawingTypes.Tracer = {"Line", {Thickness = ESPConfig.TracerThickness, Color = ESPConfig.TracerColor, Visible = false}}
+        createIfAllowed("Tracer", "Line", {Thickness = ESPConfig.TracerThickness, Color = ESPConfig.TracerColor, Visible = false})
     end
-    
+
     if ESPConfig.NameEnabled then
-        drawingTypes.Name = {"Text", {Text = player.Name, Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.NameColor, Visible = false}}
+        createIfAllowed("Name", "Text", {Text = player.Name, Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.NameColor, Visible = false})
     end
-    
+
     if ESPConfig.DistanceEnabled then
-        drawingTypes.Distance = {"Text", {Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.DistanceColor, Visible = false}}
+        createIfAllowed("Distance", "Text", {Text = "", Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.DistanceColor, Visible = false})
     end
-    
+
     if ESPConfig.ToolEnabled then
-        drawingTypes.Tool = {"Text", {Size = ESPConfig.TextSize - 2, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.ToolColor, Visible = false}}
+        createIfAllowed("Tool", "Text", {Text = "", Size = math_max(10, ESPConfig.TextSize - 2), Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.ToolColor, Visible = false})
     end
-    
+
     if ESPConfig.HealthBarEnabled then
-        drawingTypes.HealthBarBackground = {"Square", {Thickness = 1, Filled = true, Color = Color3_fromRGB(0, 0, 0), Visible = false}}
-        drawingTypes.HealthBar = {"Square", {Thickness = 1, Filled = true, Color = ESPConfig.HealthBarColor, Visible = false}}
-        drawingTypes.HealthBarOutline = {"Square", {Thickness = 1, Filled = false, Color = Color3_fromRGB(255, 255, 255), Visible = false}}
+        createIfAllowed("HealthBarBackground", "Square", {Thickness = 1, Filled = true, Color = Color3_fromRGB(0,0,0), Visible = false})
+        createIfAllowed("HealthBar", "Square", {Thickness = 1, Filled = true, Color = ESPConfig.HealthBarColor, Visible = false})
+        createIfAllowed("HealthBarOutline", "Square", {Thickness = 1, Filled = false, Color = Color3_fromRGB(255,255,255), Visible = false})
     end
-    
+
     if ESPConfig.SkeletonEnabled then
-        for i, connection in ipairs(BONE_CONNECTIONS) do
-            drawingTypes["Bone_"..i] = {"Line", {Thickness = ESPConfig.SkeletonThickness, Color = ESPConfig.SkeletonColor, Visible = false}}
+        for i = 1, # ( {
+            {"Head", "UpperTorso"},
+            {"UpperTorso", "LowerTorso"},
+            {"UpperTorso", "LeftUpperArm"},
+            {"LeftUpperArm", "LeftLowerArm"},
+            {"LeftLowerArm", "LeftHand"},
+            {"UpperTorso", "RightUpperArm"},
+            {"RightUpperArm", "RightLowerArm"},
+            {"RightLowerArm", "RightHand"},
+            {"LowerTorso", "LeftUpperLeg"},
+            {"LeftUpperLeg", "LeftLowerLeg"},
+            {"LeftLowerLeg", "LeftFoot"},
+            {"LowerTorso", "RightUpperLeg"},
+            {"RightUpperLeg", "RightLowerLeg"},
+            {"RightUpperLeg", "RightFoot"}
+        } ) do
+            createIfAllowed("Bone_"..i, "Line", {Thickness = ESPConfig.SkeletonThickness, Color = ESPConfig.SkeletonColor, Visible = false})
         end
     end
-    
-    -- Line of Sight drawings
+
     if ESPConfig.LineOfSightEnabled then
-        drawingTypes.LineOfSight = {"Line", {Thickness = ESPConfig.LineOfSightThickness, Color = ESPConfig.LineOfSightColor, Visible = false}}
-        drawingTypes.LineOfSightArrow1 = {"Line", {Thickness = ESPConfig.LineOfSightThickness, Color = ESPConfig.LineOfSightColor, Visible = false}}
-        drawingTypes.LineOfSightArrow2 = {"Line", {Thickness = ESPConfig.LineOfSightThickness, Color = ESPConfig.LineOfSightColor, Visible = false}}
+        createIfAllowed("LineOfSight", "Line", {Thickness = ESPConfig.LineOfSightThickness, Color = ESPConfig.LineOfSightColor, Visible = false})
+        createIfAllowed("LineOfSightArrow1", "Line", {Thickness = ESPConfig.LineOfSightThickness, Color = ESPConfig.LineOfSightColor, Visible = false})
+        createIfAllowed("LineOfSightArrow2", "Line", {Thickness = ESPConfig.LineOfSightThickness, Color = ESPConfig.LineOfSightColor, Visible = false})
     end
-    
-    for name, drawingInfo in pairs(drawingTypes) do
-        local success, drawing = pcall(CreateDrawing, drawingInfo[1], drawingInfo[2])
-        if success and drawing then
-            esp.Drawings[name] = drawing
-        end
-    end
-    
+
     ESPObjects[player] = esp
 
+    -- Character added handling
     local function CharacterAdded(character)
-        if not character or not character:IsDescendantOf(game) then
-            return
-        end
-        
+        if not character or not character:IsDescendantOf(game) then return end
+
         local rootPart = GetRootPart(character)
         local humanoid = GetHumanoid(character)
-        
+
+        -- Wait for root/humanoid if necessary (safe retry)
         if not rootPart or not humanoid then
-            task.delay(1, function()
+            task.delay(0.7, function()
                 if character and character:IsDescendantOf(Workspace) and ESPObjects[player] then
                     CharacterAdded(character)
                 end
             end)
             return
         end
-        
+
         esp.Character = character
-        
+
+        -- highlight/adorn whole character if chams enabled
         if ESPConfig.ChamsEnabled then
-            for _, partName in ipairs(CHAMS_PARTS) do
-                local part = character:FindFirstChild(partName)
-                if part and part:IsA("BasePart") and part:IsDescendantOf(Workspace) then
-                    local highlight = Instance.new("Highlight")
-                    highlight.Adornee = part
-                    highlight.FillColor = ESPConfig.ChamsColor
-                    highlight.FillTransparency = 0.5
-                    highlight.OutlineColor = Color3_new(0, 0, 0)
-                    highlight.OutlineTransparency = 0.8
-                    highlight.Parent = CoreGui
-                    
-                    esp.Chams[partName] = highlight
-                end
+            if esp.Highlight and esp.Highlight.Destroy then
+                pcall(function() esp.Highlight:Destroy() end)
             end
+            local ok, highlight = pcall(function()
+                local h = Instance.new("Highlight")
+                h.Adornee = character
+                h.FillColor = ESPConfig.ChamsColor
+                h.FillTransparency = 0.5
+                h.OutlineTransparency = 0.8
+                h.Parent = CoreGui
+                return h
+            end)
+            if ok then esp.Highlight = highlight end
         end
-        
+
+        -- humanoid death handler
         esp.Connections.HumanoidDied = humanoid.Died:Connect(function()
-            for _, drawing in pairs(esp.Drawings) do
-                if drawing then
-                    drawing.Visible = false
-                end
-            end
-            for _, cham in pairs(esp.Chams) do
-                if cham then
-                    cham.Enabled = false
-                end
-            end
+            for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+            if esp.Highlight and esp.Highlight.Enabled ~= nil then pcall(function() esp.Highlight.Enabled = false end) end
         end)
     end
-    
-    if player.Character and player:IsDescendantOf(Players) then
+
+    -- Attach initial character if present
+    if player.Character and player.Character:IsDescendantOf(Workspace) then
         pcall(CharacterAdded, player.Character)
     end
-    
-    esp.Connections.CharacterAdded = player.CharacterAdded:Connect(function(character)
-        if character and character:IsDescendantOf(game) then
-            pcall(CharacterAdded, character)
-        end
+
+    -- Connections to update on character spawn/remove
+    esp.Connections.CharacterAdded = player.CharacterAdded:Connect(function(c)
+        pcall(function() CharacterAdded(c) end)
     end)
-    
     esp.Connections.CharacterRemoving = player.CharacterRemoving:Connect(function()
-        for _, drawing in pairs(esp.Drawings) do
-            if drawing then
-                drawing.Visible = false
-            end
-        end
-        for _, cham in pairs(esp.Chams) do
-            if cham then
-                cham:Destroy()
-            end
-        end
-        esp.Chams = {}
+        for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+        if esp.Highlight and esp.Highlight.Destroy then pcall(function() esp.Highlight:Destroy() end) end
+        esp.Highlight = nil
         esp.Character = nil
     end)
 end
 
--- World-space ESP update
+-- Update function for a single player's ESP (safe, robust)
 local function UpdateESP(player, currentTime)
     local esp = ESPObjects[player]
     if not esp or not esp.IsValid then
         table.insert(CleanupQueue, player)
         return
     end
-    
-    local timeSinceLastUpdate = currentTime - esp.LastUpdate
-    if timeSinceLastUpdate < (1 / ESPConfig.UpdateRate) then
-        return
-    end
-    
+
+    -- Rate limit per ESP
+    if currentTime - esp.LastUpdate < (1 / math_max(ESPConfig.UpdateRate, 1)) then return end
     esp.LastUpdate = currentTime
-    
+
     local character = esp.Character
     if not character or not character:IsDescendantOf(Workspace) then
-        for _, drawing in pairs(esp.Drawings) do
-            if drawing then
-                drawing.Visible = false
-            end
-        end
+        for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+        if esp.Highlight and esp.Highlight.Enabled ~= nil then pcall(function() esp.Highlight.Enabled = false end) end
         return
     end
-    
+
     local humanoidRootPart = GetRootPart(character)
     local humanoid = GetHumanoid(character)
-    
-    if not humanoidRootPart or not humanoid or humanoid.Health <= 0 then
-        for _, drawing in pairs(esp.Drawings) do
-            if drawing then
-                drawing.Visible = false
-            end
-        end
-        for _, cham in pairs(esp.Chams) do
-            if cham then 
-                cham.Enabled = false 
-            end
-        end
+    if not humanoidRootPart or not humanoid then
+        for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+        if esp.Highlight and esp.Highlight.Enabled ~= nil then pcall(function() esp.Highlight.Enabled = false end) end
         return
     end
-    
+
+    if humanoid.Health <= 0 then
+        for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+        if esp.Highlight and esp.Highlight.Enabled ~= nil then pcall(function() esp.Highlight.Enabled = false end) end
+        return
+    end
+
     local distance = (humanoidRootPart.Position - CurrentCamera.CFrame.Position).Magnitude
     if distance > ESPConfig.MaxDistance then
-        for _, drawing in pairs(esp.Drawings) do
-            if drawing then
-                drawing.Visible = false
-            end
-        end
-        for _, cham in pairs(esp.Chams) do
-            if cham then 
-                cham.Enabled = false 
-            end
-        end
+        for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+        if esp.Highlight and esp.Highlight.Enabled ~= nil then pcall(function() esp.Highlight.Enabled = false end) end
         return
     end
-    
+
     local isVisible = IsPlayerVisible(character, humanoidRootPart, distance)
-    
-    if ESPConfig.ChamsEnabled and distance <= ESPConfig.LODDistance then
-        for _, cham in pairs(esp.Chams) do
-            if cham then
-                cham.Enabled = isVisible
-            end
-        end
-    elseif ESPConfig.ChamsEnabled then
-        for _, cham in pairs(esp.Chams) do
-            if cham then 
-                cham.Enabled = false 
-            end
-        end
+    if esp.Highlight and esp.Highlight.FillTransparency ~= nil then
+        pcall(function() esp.Highlight.Enabled = ESPConfig.ChamsEnabled and isVisible end)
     end
-    
+
     local boundingBox = GetBoundingBox(character)
     local onScreen = boundingBox ~= nil
-    
+
     if onScreen then
         local pos, size = boundingBox.Position, boundingBox.Size
-        local rootPos, headPos = boundingBox.RootPosition, boundingBox.HeadPosition
-        
-        -- BOX ESP (Independent)
+        local rootPos = boundingBox.RootPosition
+
+        -- Box
         if ESPConfig.BoxEnabled then
             local lines = {
-                {pos, pos + Vector2_new(size.X, 0)},
-                {pos, pos + Vector2_new(0, size.Y)},
-                {pos + Vector2_new(size.X, 0), pos + size},
-                {pos + Vector2_new(0, size.Y), pos + size}
+                {Vector2_new(pos.X, pos.Y), Vector2_new(pos.X + size.X, pos.Y)},
+                {Vector2_new(pos.X, pos.Y), Vector2_new(pos.X, pos.Y + size.Y)},
+                {Vector2_new(pos.X + size.X, pos.Y), Vector2_new(pos.X + size.X, pos.Y + size.Y)},
+                {Vector2_new(pos.X, pos.Y + size.Y), Vector2_new(pos.X + size.X, pos.Y + size.Y)}
             }
-            
             for i = 1, 4 do
                 local line = esp.Drawings["BoxLine"..i]
                 if line then
-                    line.From = lines[i][1]
-                    line.To = lines[i][2]
-                    line.Color = GetElementColor("Box", isVisible, player)
-                    line.Visible = true
+                    pcall(function()
+                        line.From = lines[i][1]
+                        line.To = lines[i][2]
+                        line.Color = GetElementColor("Box", isVisible)
+                        line.Visible = true
+                    end)
                 end
             end
         else
-            for i = 1, 4 do
-                local line = esp.Drawings["BoxLine"..i]
-                if line then line.Visible = false end
-            end
+            for i = 1, 4 do local l = esp.Drawings["BoxLine"..i] if l then pcall(function() l.Visible = false end) end end
         end
-        
-        -- HEALTH BAR (Independent)
+
+        -- Health bar
         if ESPConfig.HealthBarEnabled then
+            local healthPct = math_clamp(humanoid.Health / math_max(humanoid.MaxHealth, 1), 0, 1)
             local healthBarX = pos.X - ESPConfig.HealthBarOffset - ESPConfig.HealthBarWidth
             local healthBarY = pos.Y
-            local healthBarHeight = size.Y
-            
-            local healthPercentage = math_clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
-            local healthHeight = healthBarHeight * healthPercentage
-            
+            local healthBarH = size.Y
             local bg = esp.Drawings.HealthBarBackground
-            if bg then
-                bg.Position = Vector2_new(healthBarX, healthBarY)
-                bg.Size = Vector2_new(ESPConfig.HealthBarWidth, healthBarHeight)
-                bg.Visible = true
-            end
-            
             local fill = esp.Drawings.HealthBar
-            if fill then
-                fill.Position = Vector2_new(healthBarX, healthBarY + (healthBarHeight - healthHeight))
-                fill.Size = Vector2_new(ESPConfig.HealthBarWidth, healthHeight)
-                fill.Color = GetHealthColor(humanoid.Health, humanoid.MaxHealth)
-                fill.Visible = true
-            end
-            
             local outline = esp.Drawings.HealthBarOutline
-            if outline then
-                outline.Position = Vector2_new(healthBarX, healthBarY)
-                outline.Size = Vector2_new(ESPConfig.HealthBarWidth, healthBarHeight)
-                outline.Visible = true
-            end
+            pcall(function()
+                if bg then
+                    bg.Position = Vector2_new(healthBarX, healthBarY)
+                    bg.Size = Vector2_new(ESPConfig.HealthBarWidth, healthBarH)
+                    bg.Visible = true
+                end
+                if fill then
+                    local fillH = healthBarH * healthPct
+                    fill.Position = Vector2_new(healthBarX, healthBarY + (healthBarH - fillH))
+                    fill.Size = Vector2_new(ESPConfig.HealthBarWidth, fillH)
+                    fill.Color = GetHealthColor(humanoid.Health, humanoid.MaxHealth)
+                    fill.Visible = true
+                end
+                if outline then
+                    outline.Position = Vector2_new(healthBarX, healthBarY)
+                    outline.Size = Vector2_new(ESPConfig.HealthBarWidth, healthBarH)
+                    outline.Visible = true
+                end
+            end)
         else
-            if esp.Drawings.HealthBarBackground then esp.Drawings.HealthBarBackground.Visible = false end
-            if esp.Drawings.HealthBar then esp.Drawings.HealthBar.Visible = false end
-            if esp.Drawings.HealthBarOutline then esp.Drawings.HealthBarOutline.Visible = false end
+            for _, k in ipairs({"HealthBarBackground","HealthBar","HealthBarOutline"}) do local d=esp.Drawings[k] if d then pcall(function() d.Visible=false end) end end
         end
-        
-        -- FIXED: NAME TEXT - Shows from any distance, positioned above head
+
+        -- Name
         if ESPConfig.NameEnabled then
-            local nameDrawing = esp.Drawings.Name
-            if nameDrawing then
+            local nameD = esp.Drawings.Name
+            if nameD then
+                -- find head for nicer offset if exists
                 local head = character:FindFirstChild("Head")
                 if head then
-                    local headScreenPos = CurrentCamera:WorldToViewportPoint(head.Position)
-                    if headScreenPos.Z > 0 then
-                        nameDrawing.Position = Vector2_new(headScreenPos.X, headScreenPos.Y - 25)
-                        nameDrawing.Text = player.Name
-                        nameDrawing.Color = GetElementColor("Name", isVisible, player)
-                        nameDrawing.Visible = true
+                    local headScreen, headOn = CurrentCamera:WorldToViewportPoint(head.Position)
+                    if headOn and headScreen.Z > 0 then
+                        pcall(function()
+                            nameD.Position = Vector2_new(headScreen.X, headScreen.Y - 25)
+                            nameD.Text = player.Name
+                            nameD.Color = GetElementColor("Name", isVisible)
+                            nameD.Visible = true
+                        end)
                     else
-                        nameDrawing.Visible = false
+                        pcall(function() nameD.Visible = false end)
                     end
                 else
-                    nameDrawing.Visible = false
+                    pcall(function()
+                        nameD.Position = Vector2_new(rootPos.X, rootPos.Y - 25)
+                        nameD.Text = player.Name
+                        nameD.Color = GetElementColor("Name", isVisible)
+                        nameD.Visible = true
+                    end)
                 end
             end
         else
-            if esp.Drawings.Name then esp.Drawings.Name.Visible = false end
+            if esp.Drawings.Name then pcall(function() esp.Drawings.Name.Visible = false end) end
         end
-        
-        -- FIXED: TOOL TEXT - Shows from any distance, positioned above name
+
+        -- Tool
         if ESPConfig.ToolEnabled then
-            local toolDrawing = esp.Drawings.Tool
-            if toolDrawing then
+            local toolD = esp.Drawings.Tool
+            if toolD then
                 local head = character:FindFirstChild("Head")
-                if head then
-                    local headScreenPos = CurrentCamera:WorldToViewportPoint(head.Position)
-                    if headScreenPos.Z > 0 then
-                        local equippedTool = character:FindFirstChildOfClass("Tool")
-                        toolDrawing.Position = Vector2_new(headScreenPos.X, headScreenPos.Y - 45)
-                        toolDrawing.Text = equippedTool and "Tool: " .. equippedTool.Name or "No Tool"
-                        toolDrawing.Color = GetElementColor("Tool", isVisible, player)
-                        toolDrawing.Visible = true
-                    else
-                        toolDrawing.Visible = false
+                local headScreen, headOn = head and CurrentCamera:WorldToViewportPoint(head.Position) or nil, false
+                if head then headScreen, headOn = CurrentCamera:WorldToViewportPoint(head.Position) end
+                if headOn and headScreen and headScreen.Z > 0 then
+                    -- improved tool detection: check character, then backpack
+                    local equippedTool = nil
+                    for _, v in pairs(character:GetChildren()) do
+                        if v:IsA("Tool") then equippedTool = v break end
                     end
+                    if not equippedTool and player:FindFirstChild("Backpack") then
+                        for _, v in pairs(player.Backpack:GetChildren()) do
+                            if v:IsA("Tool") then equippedTool = v break end
+                        end
+                    end
+                    pcall(function()
+                        toolD.Position = Vector2_new(headScreen.X, headScreen.Y - 45)
+                        toolD.Text = equippedTool and ("Tool: " .. tostring(equippedTool.Name)) or "No Tool"
+                        toolD.Color = GetElementColor("Tool", isVisible)
+                        toolD.Visible = true
+                    end)
                 else
-                    toolDrawing.Visible = false
+                    pcall(function() toolD.Visible = false end)
                 end
             end
         else
-            if esp.Drawings.Tool then esp.Drawings.Tool.Visible = false end
+            if esp.Drawings.Tool then pcall(function() esp.Drawings.Tool.Visible = false end) end
         end
-        
-        -- FIXED: DISTANCE TEXT - Shows from any distance, positioned under player box
+
+        -- Distance
         if ESPConfig.DistanceEnabled then
-            local distanceDrawing = esp.Drawings.Distance
-            if distanceDrawing then
-                local rootScreenPos = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
-                if rootScreenPos.Z > 0 then
-                    distanceDrawing.Position = Vector2_new(rootScreenPos.X, pos.Y + size.Y + 10)
-                    distanceDrawing.Text = string_format("%.0f studs", distance)
-                    distanceDrawing.Color = GetElementColor("Distance", isVisible, player)
-                    distanceDrawing.Visible = true
+            local distD = esp.Drawings.Distance
+            if distD then
+                local rootScreen, rootOn = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
+                if rootOn and rootScreen and rootScreen.Z > 0 then
+                    pcall(function()
+                        distD.Position = Vector2_new(rootScreen.X, pos.Y + size.Y + 10)
+                        distD.Text = string_format("%.0f studs", distance)
+                        distD.Color = GetElementColor("Distance", isVisible)
+                        distD.Visible = true
+                    end)
                 else
-                    distanceDrawing.Visible = false
+                    pcall(function() distD.Visible = false end)
                 end
             end
         else
-            if esp.Drawings.Distance then esp.Drawings.Distance.Visible = false end
+            if esp.Drawings.Distance then pcall(function() esp.Drawings.Distance.Visible = false end) end
         end
-        
-        -- TRACER (Independent)
+
+        -- Tracer
         if ESPConfig.TracerEnabled then
             local tracer = esp.Drawings.Tracer
             if tracer then
-                local rootScreenPos = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
-                if rootScreenPos.Z > 0 then
-                    tracer.From = Vector2_new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y)
-                    tracer.To = Vector2_new(rootScreenPos.X, rootScreenPos.Y)
-                    tracer.Color = GetElementColor("Tracer", isVisible, player)
-                    tracer.Visible = true
+                local rootScreen, rootOn = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
+                if rootOn and rootScreen and rootScreen.Z > 0 then
+                    pcall(function()
+                        tracer.From = Vector2_new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y)
+                        tracer.To = Vector2_new(rootScreen.X, rootScreen.Y)
+                        tracer.Color = GetElementColor("Tracer", isVisible)
+                        tracer.Visible = true
+                    end)
                 else
-                    tracer.Visible = false
+                    pcall(function() tracer.Visible = false end)
                 end
             end
         else
-            if esp.Drawings.Tracer then esp.Drawings.Tracer.Visible = false end
+            if esp.Drawings.Tracer then pcall(function() esp.Drawings.Tracer.Visible = false end) end
         end
-        
-        -- SKELETON (Independent)
+
+        -- Skeleton (using safe bone list)
+        local BONE_CONNECTIONS = {
+            {"Head", "UpperTorso"},
+            {"UpperTorso", "LowerTorso"},
+            {"UpperTorso", "LeftUpperArm"},
+            {"LeftUpperArm", "LeftLowerArm"},
+            {"LeftLowerArm", "LeftHand"},
+            {"UpperTorso", "RightUpperArm"},
+            {"RightUpperArm", "RightLowerArm"},
+            {"RightLowerArm", "RightHand"},
+            {"LowerTorso", "LeftUpperLeg"},
+            {"LeftUpperLeg", "LeftLowerLeg"},
+            {"LeftLowerLeg", "LeftFoot"},
+            {"LowerTorso", "RightUpperLeg"},
+            {"RightUpperLeg", "RightLowerLeg"},
+            {"RightUpperLeg", "RightFoot"}
+        }
         if ESPConfig.SkeletonEnabled and distance <= ESPConfig.LODDistance then
-            for i, connection in ipairs(BONE_CONNECTIONS) do
+            for i, conn in ipairs(BONE_CONNECTIONS) do
                 local boneLine = esp.Drawings["Bone_"..i]
-                
                 if boneLine then
-                    local part1 = character:FindFirstChild(connection[1])
-                    local part2 = character:FindFirstChild(connection[2])
-                    
+                    local part1 = character:FindFirstChild(conn[1])
+                    local part2 = character:FindFirstChild(conn[2])
                     if part1 and part2 and part1:IsA("BasePart") and part2:IsA("BasePart") then
-                        local pos1, onScreen1 = CurrentCamera:WorldToViewportPoint(part1.Position)
-                        local pos2, onScreen2 = CurrentCamera:WorldToViewportPoint(part2.Position)
-                        
-                        if onScreen1 and onScreen2 and pos1.Z > 0 and pos2.Z > 0 then
-                            boneLine.From = Vector2_new(pos1.X, pos1.Y)
-                            boneLine.To = Vector2_new(pos2.X, pos2.Y)
-                            boneLine.Color = GetElementColor("Skeleton", isVisible, player)
-                            boneLine.Visible = true
+                        local p1, o1 = CurrentCamera:WorldToViewportPoint(part1.Position)
+                        local p2, o2 = CurrentCamera:WorldToViewportPoint(part2.Position)
+                        if o1 and o2 and p1.Z > 0 and p2.Z > 0 then
+                            pcall(function()
+                                boneLine.From = Vector2_new(p1.X, p1.Y)
+                                boneLine.To = Vector2_new(p2.X, p2.Y)
+                                boneLine.Color = GetElementColor("Skeleton", isVisible)
+                                boneLine.Visible = true
+                            end)
                         else
-                            boneLine.Visible = false
+                            pcall(function() boneLine.Visible = false end)
                         end
                     else
-                        boneLine.Visible = false
+                        pcall(function() boneLine.Visible = false end)
                     end
                 end
             end
         else
-            for i = 1, #BONE_CONNECTIONS do
-                local boneLine = esp.Drawings["Bone_"..i]
-                if boneLine then 
-                    boneLine.Visible = false 
-                end
-            end
+            for i = 1, #BONE_CONNECTIONS do local b = esp.Drawings["Bone_"..i] if b then pcall(function() b.Visible = false end) end end
         end
-        
-        -- LINE OF SIGHT (Independent)
+
+        -- Line of Sight
         if ESPConfig.LineOfSightEnabled and distance <= ESPConfig.LODDistance then
             local head = character:FindFirstChild("Head")
             if head and head:IsA("BasePart") then
-                local headCFrame = head.CFrame
-                local lookDirection = headCFrame.LookVector
-                
-                -- Calculate end point of line of sight
-                local startPoint = headCFrame.Position
-                local endPoint = startPoint + (lookDirection * ESPConfig.LineOfSightDistance)
-                
-                -- Convert to screen space
-                local startScreenPos, startOnScreen = CurrentCamera:WorldToViewportPoint(startPoint)
-                local endScreenPos, endOnScreen = CurrentCamera:WorldToViewportPoint(endPoint)
-                
-                if startOnScreen and endOnScreen and startScreenPos.Z > 0 and endScreenPos.Z > 0 then
-                    local startVec = Vector2_new(startScreenPos.X, startScreenPos.Y)
-                    local endVec = Vector2_new(endScreenPos.X, endScreenPos.Y)
-                    
-                    -- Main line of sight
+                local startP = head.Position
+                local dir = head.CFrame.LookVector
+                local endP = startP + dir * ESPConfig.LineOfSightDistance
+                local startS, sOn = CurrentCamera:WorldToViewportPoint(startP)
+                local endS, eOn = CurrentCamera:WorldToViewportPoint(endP)
+                if sOn and eOn and startS.Z > 0 and endS.Z > 0 then
+                    local startV = Vector2_new(startS.X, startS.Y)
+                    local endV = Vector2_new(endS.X, endS.Y)
                     local losLine = esp.Drawings.LineOfSight
-                    if losLine then
-                        losLine.From = startVec
-                        losLine.To = endVec
-                        losLine.Color = GetElementColor("LineOfSight", isVisible, player)
-                        losLine.Visible = true
-                    end
-                    
-                    -- Arrow head
+                    if losLine then pcall(function() losLine.From = startV losLine.To = endV losLine.Color = GetElementColor("LineOfSight", isVisible) losLine.Visible = true end) end
+
                     local arrowSize = 10
-                    local direction = (endVec - startVec).Unit
-                    local perpendicular = Vector2_new(-direction.Y, direction.X)
-                    
-                    local arrow1 = esp.Drawings.LineOfSightArrow1
-                    local arrow2 = esp.Drawings.LineOfSightArrow2
-                    
-                    if arrow1 and arrow2 then
-                        arrow1.From = endVec
-                        arrow1.To = endVec - (direction * arrowSize) + (perpendicular * arrowSize * 0.5)
-                        arrow1.Color = GetElementColor("LineOfSight", isVisible, player)
-                        arrow1.Visible = true
-                        
-                        arrow2.From = endVec
-                        arrow2.To = endVec - (direction * arrowSize) - (perpendicular * arrowSize * 0.5)
-                        arrow2.Color = GetElementColor("LineOfSight", isVisible, player)
-                        arrow2.Visible = true
+                    local direction = (endV - startV).Unit
+                    local perp = Vector2_new(-direction.Y, direction.X)
+                    local a1, a2 = esp.Drawings.LineOfSightArrow1, esp.Drawings.LineOfSightArrow2
+                    if a1 and a2 then
+                        pcall(function()
+                            a1.From = endV
+                            a1.To = endV - (direction * arrowSize) + (perp * arrowSize * 0.5)
+                            a1.Color = GetElementColor("LineOfSight", isVisible)
+                            a1.Visible = true
+
+                            a2.From = endV
+                            a2.To = endV - (direction * arrowSize) - (perp * arrowSize * 0.5)
+                            a2.Color = GetElementColor("LineOfSight", isVisible)
+                            a2.Visible = true
+                        end)
                     end
                 else
-                    if esp.Drawings.LineOfSight then esp.Drawings.LineOfSight.Visible = false end
-                    if esp.Drawings.LineOfSightArrow1 then esp.Drawings.LineOfSightArrow1.Visible = false end
-                    if esp.Drawings.LineOfSightArrow2 then esp.Drawings.LineOfSightArrow2.Visible = false end
+                    if esp.Drawings.LineOfSight then pcall(function() esp.Drawings.LineOfSight.Visible = false end) end
+                    if esp.Drawings.LineOfSightArrow1 then pcall(function() esp.Drawings.LineOfSightArrow1.Visible = false end) end
+                    if esp.Drawings.LineOfSightArrow2 then pcall(function() esp.Drawings.LineOfSightArrow2.Visible = false end) end
                 end
-            else
-                if esp.Drawings.LineOfSight then esp.Drawings.LineOfSight.Visible = false end
-                if esp.Drawings.LineOfSightArrow1 then esp.Drawings.LineOfSightArrow1.Visible = false end
-                if esp.Drawings.LineOfSightArrow2 then esp.Drawings.LineOfSightArrow2.Visible = false end
             end
         else
-            if esp.Drawings.LineOfSight then esp.Drawings.LineOfSight.Visible = false end
-            if esp.Drawings.LineOfSightArrow1 then esp.Drawings.LineOfSightArrow1.Visible = false end
-            if esp.Drawings.LineOfSightArrow2 then esp.Drawings.LineOfSightArrow2.Visible = false end
+            if esp.Drawings.LineOfSight then pcall(function() esp.Drawings.LineOfSight.Visible = false end) end
+            if esp.Drawings.LineOfSightArrow1 then pcall(function() esp.Drawings.LineOfSightArrow1.Visible = false end) end
+            if esp.Drawings.LineOfSightArrow2 then pcall(function() esp.Drawings.LineOfSightArrow2.Visible = false end) end
         end
-        
-        esp.LastBoundingBox = boundingBox
-        
+
     else
-        -- All features off-screen
-        for _, drawing in pairs(esp.Drawings) do
-            if drawing then
-                drawing.Visible = false
-            end
-        end
-        
-        if ESPConfig.ChamsEnabled then
-            for _, cham in pairs(esp.Chams) do
-                if cham then 
-                    cham.Enabled = false 
-                end
-            end
-        end
-        
-        esp.LastBoundingBox = nil
+        -- off-screen: hide everything
+        for _, d in pairs(esp.Drawings) do if d then pcall(function() d.Visible = false end) end end
+        if esp.Highlight and esp.Highlight.Enabled ~= nil then pcall(function() esp.Highlight.Enabled = false end) end
     end
 end
 
--- SIMPLIFIED GUI CREATION - GUARANTEED TO POP UP
-local function CreateEnhancedGUI()
-    -- Clean up any existing GUI first
-    local existingGUI = CoreGui:FindFirstChild("CarbonESP")
-    if existingGUI then
-        existingGUI:Destroy()
-    end
-    
-    -- Create the main GUI
-    local CarbonESP = Instance.new("ScreenGui")
-    CarbonESP.Name = "CarbonESP"
-    CarbonESP.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    CarbonESP.ResetOnSpawn = false
-    CarbonESP.DisplayOrder = 999
-    CarbonESP.IgnoreGuiInset = true
-    
-    -- Create main frame
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 400, 0, 500)
-    MainFrame.Position = UDim2.new(0, 20, 0, 20)
-    MainFrame.BackgroundColor3 = CreativeColors.Primary
-    MainFrame.BackgroundTransparency = 0.1
-    MainFrame.BorderSizePixel = 0
-    MainFrame.ClipsDescendants = true
-    MainFrame.Parent = CarbonESP
-    
-    -- Add rounded corners
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 12)
-    UICorner.Parent = MainFrame
-    
-    -- Add border
-    local UIStroke = Instance.new("UIStroke")
-    UIStroke.Color = CreativeColors.Accent
-    UIStroke.Thickness = 2
-    UIStroke.Parent = MainFrame
-    
-    -- Title bar
-    local TitleBar = Instance.new("Frame")
-    TitleBar.Name = "TitleBar"
-    TitleBar.Size = UDim2.new(1, 0, 0, 50)
-    TitleBar.BackgroundColor3 = CreativeColors.Secondary
-    TitleBar.BorderSizePixel = 0
-    TitleBar.Parent = MainFrame
-    
-    local TitleBarCorner = Instance.new("UICorner")
-    TitleBarCorner.CornerRadius = UDim.new(0, 12)
-    TitleBarCorner.Parent = TitleBar
-    
-    local Title = Instance.new("TextLabel")
-    Title.Name = "Title"
-    Title.Size = UDim2.new(0.7, 0, 1, 0)
-    Title.Position = UDim2.new(0, 15, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.Text = "CARBON'S ESP v2.0"
-    Title.TextColor3 = CreativeColors.Text
-    Title.TextSize = 18
-    Title.Font = Enum.Font.GothamBold
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Parent = TitleBar
-    
-    local HideButton = Instance.new("TextButton")
-    HideButton.Name = "HideButton"
-    HideButton.Size = UDim2.new(0, 80, 0, 30)
-    HideButton.Position = UDim2.new(1, -85, 0.5, -15)
-    HideButton.BackgroundColor3 = CreativeColors.Warning
-    HideButton.BorderSizePixel = 0
-    HideButton.Text = "HIDE"
-    HideButton.TextColor3 = CreativeColors.Text
-    HideButton.TextSize = 14
-    HideButton.Font = Enum.Font.GothamBold
-    HideButton.Parent = TitleBar
-    
-    local HideButtonCorner = Instance.new("UICorner")
-    HideButtonCorner.CornerRadius = UDim.new(0, 6)
-    HideButtonCorner.Parent = HideButton
-    
-    -- Content area
-    local ScrollFrame = Instance.new("ScrollingFrame")
-    ScrollFrame.Size = UDim2.new(1, -10, 1, -60)
-    ScrollFrame.Position = UDim2.new(0, 5, 0, 55)
-    ScrollFrame.BackgroundTransparency = 1
-    ScrollFrame.BorderSizePixel = 0
-    ScrollFrame.ScrollBarThickness = 6
-    ScrollFrame.ScrollBarImageColor3 = CreativeColors.Accent
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 800)
-    ScrollFrame.Parent = MainFrame
-    
-    local ContentLayout = Instance.new("UIListLayout")
-    ContentLayout.Padding = UDim.new(0, 8)
-    ContentLayout.Parent = ScrollFrame
-    
-    -- Create toggle buttons for features
-    local features = {
-        {"Box ESP", "BoxEnabled", CreativeColors.Accent},
-        {"Tracers", "TracerEnabled", CreativeColors.Accent},
-        {"Names", "NameEnabled", CreativeColors.Accent2},
-        {"Distance", "DistanceEnabled", CreativeColors.Accent2},
-        {"Tools", "ToolEnabled", CreativeColors.Accent2},
-        {"Skeleton", "SkeletonEnabled", CreativeColors.Purple},
-        {"Health Bars", "HealthBarEnabled", CreativeColors.Purple},
-        {"Line of Sight", "LineOfSightEnabled", CreativeColors.Purple},
-        {"Visibility Check", "VisibilityCheck", CreativeColors.Gold},
-        {"Chams", "ChamsEnabled", CreativeColors.Gold}
-    }
-    
-    for i, feature in ipairs(features) do
-        local featureName, configKey, color = feature[1], feature[2], feature[3]
-        
-        local ToggleContainer = Instance.new("Frame")
-        ToggleContainer.Size = UDim2.new(1, 0, 0, 35)
-        ToggleContainer.BackgroundColor3 = CreativeColors.Secondary
-        ToggleContainer.BackgroundTransparency = 0.8
-        ToggleContainer.Parent = ScrollFrame
-        
-        local ToggleCorner = Instance.new("UICorner")
-        ToggleCorner.CornerRadius = UDim.new(0, 8)
-        ToggleCorner.Parent = ToggleContainer
-        
-        local FeatureLabel = Instance.new("TextLabel")
-        FeatureLabel.Size = UDim2.new(0, 200, 1, 0)
-        FeatureLabel.BackgroundTransparency = 1
-        FeatureLabel.Text = "  " .. featureName
-        FeatureLabel.TextColor3 = color
-        FeatureLabel.TextSize = 14
-        FeatureLabel.Font = Enum.Font.Gotham
-        FeatureLabel.TextXAlignment = Enum.TextXAlignment.Left
-        FeatureLabel.Parent = ToggleContainer
-        
-        local ToggleButton = Instance.new("TextButton")
-        ToggleButton.Name = configKey
-        ToggleButton.Size = UDim2.new(0, 60, 0, 25)
-        ToggleButton.Position = UDim2.new(1, -65, 0.5, -12.5)
-        ToggleButton.BackgroundColor3 = ESPConfig[configKey] and CreativeColors.Success or CreativeColors.Danger
-        ToggleButton.BorderSizePixel = 0
-        ToggleButton.Text = ESPConfig[configKey] and "ON" or "OFF"
-        ToggleButton.TextColor3 = CreativeColors.Text
-        ToggleButton.TextSize = 12
-        ToggleButton.Font = Enum.Font.GothamBold
-        ToggleButton.Parent = ToggleContainer
-        
-        local ToggleButtonCorner = Instance.new("UICorner")
-        ToggleButtonCorner.CornerRadius = UDim.new(0, 6)
-        ToggleButtonCorner.Parent = ToggleButton
-        
-        -- Toggle functionality
-        ToggleButton.MouseButton1Click:Connect(function()
-            ESPConfig[configKey] = not ESPConfig[configKey]
-            ToggleButton.BackgroundColor3 = ESPConfig[configKey] and CreativeColors.Success or CreativeColors.Danger
-            ToggleButton.Text = ESPConfig[configKey] and "ON" or "OFF"
-            
-            -- Refresh ESP for all players
-            for player in pairs(ESPObjects) do
-                RemoveESP(player)
-                CreateESP(player)
-            end
-        end)
-    end
-    
-    -- Drag functionality
-    local dragging = false
-    local dragInput, dragStart, startPos
-    
-    local function update(input)
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(0, startPos.X.Offset + delta.X, 0, startPos.Y.Offset + delta.Y)
-    end
-    
-    TitleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = MainFrame.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    
-    TitleBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            update(input)
-        end
-    end)
-    
-    -- Hide/show functionality
-    local function ToggleGUI()
-        IsGUIVisible = not IsGUIVisible
-        if IsGUIVisible then
-            MainFrame.Size = UDim2.new(0, 400, 0, 500)
-            HideButton.Text = "HIDE"
-            HideButton.BackgroundColor3 = CreativeColors.Warning
-            ScrollFrame.Visible = true
-        else
-            MainFrame.Size = UDim2.new(0, 400, 0, 50)
-            HideButton.Text = "SHOW"
-            HideButton.BackgroundColor3 = CreativeColors.Success
-            ScrollFrame.Visible = false
+-- Process cleanup queue safely
+local function ProcessCleanupQueue()
+    for i = #CleanupQueue, 1, -1 do
+        local p = CleanupQueue[i]
+        if p and ESPObjects[p] then
+            RemoveESP(p)
+            CleanupQueue[i] = nil
+        elseif p then
+            CleanupQueue[i] = nil
         end
     end
-    
-    HideButton.MouseButton1Click:Connect(ToggleGUI)
-    
-    -- Auto-update canvas size
-    ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 10)
-    end)
-    
-    -- PARENT THE GUI - THIS IS CRITICAL!
-    CarbonESP.Parent = CoreGui
-    
-    print("✅ Carbon ESP GUI created successfully!")
-    return CarbonESP
 end
 
--- Optimized main loop
+-- Main loop
 local function ESPLoop()
     FrameCount = FrameCount + 1
     local currentTime = tick()
-    
+
     ProcessCleanupQueue()
-    
-    if FrameCount % 30 == 0 then
-        for player in pairs(ESPObjects) do
-            if not player:IsDescendantOf(Players) then
-                table.insert(CleanupQueue, player)
+
+    -- occasionally remove players that left
+    if FrameCount % 60 == 0 then
+        for p, _ in pairs(ESPObjects) do
+            if not p or not p.Parent then
+                table.insert(CleanupQueue, p)
             end
         end
     end
-    
+
     for player, esp in pairs(ESPObjects) do
         if esp and esp.IsValid then
-            local success, err = pcall(UpdateESP, player, currentTime)
-            if not success then
-                warn("ESP Update Error for " .. player.Name .. ": " .. err)
+            local ok, err = pcall(UpdateESP, player, currentTime)
+            if not ok then
+                warn("ESP Update Error for " .. (player and player.Name or "unknown") .. ": " .. tostring(err))
                 table.insert(CleanupQueue, player)
             end
         else
@@ -1070,116 +694,202 @@ local function ESPLoop()
     end
 end
 
--- Enhanced player monitoring
+-- Initialize monitoring: create ESP for all players (except local)
 local function InitializePlayerMonitoring()
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             CreateESP(player)
         end
     end
-    
+
     Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
         if player ~= LocalPlayer then
-            task.delay(1, function()
-                if player:IsDescendantOf(Players) then
-                    CreateESP(player)
-                end
+            task.delay(0.5, function()
+                if player:IsDescendantOf(Players) then CreateESP(player) end
             end)
         end
     end)
-    
+
     Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
-        if ESPObjects[player] then
-            RemoveESP(player)
-        end
+        if ESPObjects[player] then RemoveESP(player) end
     end)
 end
 
--- Initialize ESP
-local function InitializeESP()
-    print("🚀 Initializing Carbon's Universal ESP...")
-    
-    -- Create GUI FIRST - This ensures it pops up immediately
-    local guiSuccess, guiError = pcall(CreateEnhancedGUI)
-    if not guiSuccess then
-        warn("❌ GUI Creation Failed: " .. tostring(guiError))
-        -- Create a simple fallback GUI
-        local fallbackGUI = Instance.new("ScreenGui")
-        fallbackGUI.Name = "CarbonESP_Fallback"
-        fallbackGUI.Parent = CoreGui
-        
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(0, 300, 0, 60)
-        label.Position = UDim2.new(0, 20, 0, 20)
-        label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        label.Text = "Carbon ESP Loaded\n(GUI Error - Features Still Work)"
-        label.TextWrapped = true
-        label.Parent = fallbackGUI
-    else
-        print("✅ GUI created successfully!")
+-- Safely refresh all ESP objects (suspend render loop to avoid mid-frame deletion)
+local function RefreshESPAll()
+    -- disconnect render loop
+    if RenderConnection and RenderConnection.Connected then
+        pcall(function() RenderConnection:Disconnect() end)
+        RenderConnection = nil
     end
-    
-    -- Initialize ESP monitoring
-    InitializePlayerMonitoring()
-    
-    -- Start main loop
-    Connections.RenderStepped = RunService.RenderStepped:Connect(ESPLoop)
-    
-    print("🎉 Carbon's Universal ESP - LINE OF SIGHT EDITION Fully Loaded!")
-    print("📊 Features: Box ESP, Tracers, Names, Distance, Tools, Skeletons, Health Bars, Line of Sight")
-    print("🎮 GUI should be visible in the top-left corner!")
-end
 
--- Cleanup function
-local function CleanupESP()
-    for _, connection in pairs(Connections) do
-        if connection then
-            connection:Disconnect()
+    -- remove all existing ESP objects
+    for p, _ in pairs(ESPObjects) do
+        pcall(function() RemoveESP(p) end)
+    end
+
+    -- recreate
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            pcall(function() CreateESP(player) end)
         end
     end
-    
-    for player in pairs(ESPObjects) do
-        RemoveESP(player)
+
+    -- resume render loop
+    RenderConnection = RunService.RenderStepped:Connect(ESPLoop)
+end
+
+-- Minimal GUI creation (keeps your original style) and toggles hooked to RefreshESPAll
+local function CreateEnhancedGUI()
+    -- remove existing
+    local existing = CoreGui:FindFirstChild("CarbonESP")
+    if existing then existing:Destroy() end
+
+    -- build
+    local CarbonESP = Instance.new("ScreenGui")
+    CarbonESP.Name = "CarbonESP"
+    CarbonESP.ResetOnSpawn = false
+    CarbonESP.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 400, 0, 500)
+    MainFrame.Position = UDim2.new(0, 20, 0, 20)
+    MainFrame.BackgroundColor3 = Color3_fromRGB(25,25,35)
+    MainFrame.Parent = CarbonESP
+
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1,0,0,50)
+    TitleBar.BackgroundColor3 = Color3_fromRGB(40,40,55)
+    TitleBar.Parent = MainFrame
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(0.7,0,1,0)
+    Title.Position = UDim2.new(0,15,0,0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "CARBON'S ESP v2.0"
+    Title.TextColor3 = Color3_fromRGB(240,240,255)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 18
+    Title.Parent = TitleBar
+
+    local HideButton = Instance.new("TextButton")
+    HideButton.Size = UDim2.new(0,80,0,30)
+    HideButton.Position = UDim2.new(1, -95, 0.5, -15)
+    HideButton.BackgroundColor3 = Color3_fromRGB(255,180,0)
+    HideButton.Text = "HIDE"
+    HideButton.Parent = TitleBar
+
+    local ScrollFrame = Instance.new("ScrollingFrame")
+    ScrollFrame.Size = UDim2.new(1, -10, 1, -60)
+    ScrollFrame.Position = UDim2.new(0,5,0,55)
+    ScrollFrame.BackgroundTransparency = 1
+    ScrollFrame.Parent = MainFrame
+
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.Parent = ScrollFrame
+    ContentLayout.Padding = UDim.new(0,8)
+
+    local features = {
+        {"Box ESP", "BoxEnabled"},
+        {"Tracers", "TracerEnabled"},
+        {"Names", "NameEnabled"},
+        {"Distance", "DistanceEnabled"},
+        {"Tools", "ToolEnabled"},
+        {"Skeleton", "SkeletonEnabled"},
+        {"Health Bars", "HealthBarEnabled"},
+        {"Line of Sight", "LineOfSightEnabled"},
+        {"Visibility Check", "VisibilityCheck"},
+        {"Chams", "ChamsEnabled"}
+    }
+
+    for i, feat in ipairs(features) do
+        local labelText, key = feat[1], feat[2]
+
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1,0,0,36)
+        row.BackgroundColor3 = Color3_fromRGB(40,40,55)
+        row.Parent = ScrollFrame
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0,220,1,0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "  "..labelText
+        lbl.TextColor3 = Color3_fromRGB(240,240,255)
+        lbl.TextSize = 14
+        lbl.Font = Enum.Font.Gotham
+        lbl.Parent = row
+
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0,70,0,26)
+        btn.Position = UDim2.new(1, -80, 0.5, -13)
+        btn.Text = ESPConfig[key] and "ON" or "OFF"
+        btn.BackgroundColor3 = ESPConfig[key] and Color3_fromRGB(0,230,100) or Color3_fromRGB(255,80,80)
+        btn.Parent = row
+
+        btn.MouseButton1Click:Connect(function()
+            ESPConfig[key] = not ESPConfig[key]
+            btn.Text = ESPConfig[key] and "ON" or "OFF"
+            btn.BackgroundColor3 = ESPConfig[key] and Color3_fromRGB(0,230,100) or Color3_fromRGB(255,80,80)
+            -- Refresh all ESPs safely
+            pcall(function() RefreshESPAll() end)
+        end)
     end
-    
-    healthColorCache = {}
-    CleanupQueue = {}
-    
-    local CarbonESP = CoreGui:FindFirstChild("CarbonESP")
-    if CarbonESP then
-        CarbonESP:Destroy()
+
+    ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        ScrollFrame.CanvasSize = UDim2.new(0,0,0,ContentLayout.AbsoluteContentSize.Y + 10)
+    end)
+
+    HideButton.MouseButton1Click:Connect(function()
+        if ScrollFrame.Visible then
+            ScrollFrame.Visible = false
+            HideButton.Text = "SHOW"
+            HideButton.BackgroundColor3 = Color3_fromRGB(0,230,100)
+        else
+            ScrollFrame.Visible = true
+            HideButton.Text = "HIDE"
+            HideButton.BackgroundColor3 = Color3_fromRGB(255,180,0)
+        end
+    end)
+
+    CarbonESP.Parent = CoreGui
+    return CarbonESP
+end
+
+-- Cleanup routine
+local function CleanupESP()
+    if RenderConnection and RenderConnection.Connected then
+        pcall(function() RenderConnection:Disconnect() end)
+        RenderConnection = nil
     end
-    
-    local FallbackGUI = CoreGui:FindFirstChild("CarbonESP_Fallback")
-    if FallbackGUI then
-        FallbackGUI:Destroy()
+
+    for _, c in pairs(Connections) do
+        if c and c.Disconnect then pcall(function() c:Disconnect() end) end
     end
-    
+    for p, _ in pairs(ESPObjects) do
+        pcall(function() RemoveESP(p) end)
+    end
+
+    local gui = CoreGui:FindFirstChild("CarbonESP")
+    if gui then gui:Destroy() end
+
     print("🧹 Carbon's ESP cleaned up")
 end
 
--- MAIN EXECUTION - THIS MAKES THE GUI POP UP
-print("🔧 Starting Carbon ESP...")
-local success, err = pcall(InitializeESP)
-if not success then
-    warn("💥 ESP Initialization Error: " .. tostring(err))
-    
-    -- Even if main ESP fails, try to create at least a GUI
-    local errorGUI = Instance.new("ScreenGui")
-    errorGUI.Name = "CarbonESP_Error"
-    errorGUI.Parent = CoreGui
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0, 350, 0, 80)
-    label.Position = UDim2.new(0, 20, 0, 20)
-    label.BackgroundColor3 = Color3.fromRGB(50, 0, 0)
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.Text = "Carbon ESP Error:\n" .. tostring(err)
-    label.TextWrapped = true
-    label.Parent = errorGUI
-else
-    print("✅ Carbon ESP initialized successfully!")
+-- Initialize everything
+local function InitializeESP()
+    print("🚀 Initializing Carbon's ESP (fixed)...")
+    pcall(CreateEnhancedGUI)
+    InitializePlayerMonitoring()
+    RenderConnection = RunService.RenderStepped:Connect(ESPLoop)
+    print("✅ Carbon's ESP initialized.")
 end
 
+-- Start
+local ok, err = pcall(InitializeESP)
+if not ok then
+    warn("ESP Initialization error: " .. tostring(err))
+end
+
+-- expose cleanup
 return CleanupESP
