@@ -1,6 +1,6 @@
 --[[
 Carbon X ESP Premium - Ultra-Modern GUI
-Features: Working skeleton ESP, improved line of sight with arrows, tracers, all features functional
+Features: Real-time health bars, proper line of sight arrows, all features functional
 Client-side only
 ]]
 
@@ -178,7 +178,7 @@ local function CreateESP(player)
     -- Line of Sight with Arrow
     if ESPConfig.LineOfSightEnabled then
         esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
-        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Thickness=1,Visible=false,Filled=true})
+        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Filled=true,Visible=false})
     end
     
     -- Chams Highlight
@@ -309,7 +309,7 @@ local function UpdateESP(player)
         esp.Drawings.Distance.Visible=true 
     end
 
-    -- Health Bar (Now completely independent)
+    -- Health Bar (Now completely independent with real-time health)
     if ESPConfig.HealthBarEnabled then
         local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
                        Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
@@ -322,11 +322,21 @@ local function UpdateESP(player)
             esp.Drawings.HealthBackground.Visible=true
         end
         
-        -- Health bar fill
+        -- Health bar fill with real-time health
         if esp.Drawings.Health then
-            esp.Drawings.Health.Position=Vector2.new(corners[1].X-6,corners[1].Y+h*(1-ratio))
-            esp.Drawings.Health.Size=Vector2.new(4,h*ratio)
-            esp.Drawings.Health.Color=(ratio>0.6 and Color3.fromRGB(0,255,0)) or (ratio>0.3 and Color3.fromRGB(255,255,0)) or Color3.fromRGB(255,0,0)
+            local healthHeight = h * ratio
+            esp.Drawings.Health.Position=Vector2.new(corners[1].X-6,corners[1].Y + (h - healthHeight))
+            esp.Drawings.Health.Size=Vector2.new(4,healthHeight)
+            
+            -- Dynamic health color based on health percentage
+            if ratio > 0.6 then
+                esp.Drawings.Health.Color = Color3.fromRGB(0, 255, 0) -- Green
+            elseif ratio > 0.3 then
+                esp.Drawings.Health.Color = Color3.fromRGB(255, 255, 0) -- Yellow
+            else
+                esp.Drawings.Health.Color = Color3.fromRGB(255, 0, 0) -- Red
+            end
+            
             esp.Drawings.Health.Visible=true
         end
     end
@@ -396,7 +406,7 @@ local function UpdateESP(player)
         esp.Highlight.Enabled = false
     end
 
-    -- Line of Sight with Arrow
+    -- Line of Sight with Arrow (Fixed - Proper arrow at tip)
     if ESPConfig.LineOfSightEnabled and head and esp.Drawings.LineOfSight then
         local startPos = head.Position
         local lookVector = head.CFrame.LookVector
@@ -404,6 +414,7 @@ local function UpdateESP(player)
 
         local start2D, onScreenStart = Camera:WorldToViewportPoint(startPos)
         local end2D, onScreenEnd = Camera:WorldToViewportPoint(endPos)
+        
         if onScreenStart and onScreenEnd then
             local line = esp.Drawings.LineOfSight
             line.From = Vector2.new(start2D.X, start2D.Y)
@@ -411,20 +422,28 @@ local function UpdateESP(player)
             line.Color = lineColor
             line.Visible = true
 
-            -- Create arrow at the end of the line
+            -- Create proper arrow at the end of the line
             local arrow = esp.Drawings.LOSArrow
-            local dirVec = (line.To - line.From).Unit
-            local perp = Vector2.new(-dirVec.Y, dirVec.X)
-            local size = 8
+            local dir = (line.To - line.From).Unit
+            local length = 15 -- Arrow size
+            local width = 8   -- Arrow width
+            
+            -- Calculate arrow points
+            local back = line.To - dir * length
+            local perp = Vector2.new(-dir.Y, dir.X)
+            
             arrow.PointA = line.To
-            arrow.PointB = line.To - dirVec*size + perp*size*0.5
-            arrow.PointC = line.To - dirVec*size - perp*size*0.5
+            arrow.PointB = back + perp * width
+            arrow.PointC = back - perp * width
             arrow.Color = lineColor
             arrow.Visible = true
         else
             esp.Drawings.LineOfSight.Visible = false
             esp.Drawings.LOSArrow.Visible = false
         end
+    elseif esp.Drawings.LineOfSight then
+        esp.Drawings.LineOfSight.Visible = false
+        esp.Drawings.LOSArrow.Visible = false
     end
 end
 
