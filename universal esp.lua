@@ -1,594 +1,557 @@
---==================================================
--- Carbon's Universal ESP - Premium GUI + Animations
--- Features Added: Tab animations, particle accents,
--- category dividers, matching splash-screen intro UI
---==================================================
+--[[
+Carbon X ESP Premium - Ultra-Modern GUI
+Features: Sleek dark theme, animated toggles, modern sliders, movable/hideable interface
+Client-side only
+]]
 
+-- ===== SERVICES =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local StarterGui = game:GetService("StarterGui")
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local CurrentCamera = Workspace.CurrentCamera
+local Camera = Workspace.CurrentCamera
 
---==================================================
--- CONFIGURATION
---==================================================
+-- ===== CONFIG =====
 local ESPConfig = {
-    BoxEnabled = true,
-    TracerEnabled = true,
-    NameEnabled = true,
-    DistanceEnabled = true,
-    ToolEnabled = true,
-    SkeletonEnabled = true,
-    HealthBarEnabled = true,
-    ChamsEnabled = true,
-    VisibilityCheck = true,
-    MaxDistance = 500,
-
-    BoxColor = Color3.fromRGB(0, 170, 255),
-    TracerColor = Color3.fromRGB(255, 255, 255),
-    NameColor = Color3.fromRGB(255, 255, 255),
-    DistanceColor = Color3.fromRGB(255, 255, 255),
-    ToolColor = Color3.fromRGB(255, 255, 0),
-    SkeletonColor = Color3.fromRGB(255, 255, 255),
-    HealthBarColor = Color3.fromRGB(0, 255, 0),
-    ChamsColor = Color3.fromRGB(0, 170, 255),
-
-    TextSize = 14,
-    TextFont = Enum.Font.Gotham,
+    BoxEnabled=true,
+    NameEnabled=true,
+    ToolEnabled=true,
+    DistanceEnabled=true,
+    HealthBarEnabled=true,
+    SkeletonEnabled=true,
+    ChamsEnabled=true,
+    MaxDistance=500,
+    BoxColor=Color3.fromRGB(255,0,0),
+    NameColor=Color3.fromRGB(255,255,255),
+    ToolColor=Color3.fromRGB(255,255,0),
+    DistanceColor=Color3.fromRGB(255,255,255),
+    HealthBarColor=Color3.fromRGB(0,255,0),
+    SkeletonColor=Color3.fromRGB(255,0,0),
+    ChamsColor=Color3.fromRGB(255,0,0),
+    LineOfSightEnabled=true,
+    LineColor=Color3.fromRGB(0,255,255),
+    LineThickness=2,
+    LineLength=25
 }
 
 local ESPObjects = {}
-local Connections = {}
 
---==================================================
--- UTILITY FUNCTIONS
---==================================================
+-- ===== UTILITY FUNCTIONS =====
 local function GetHumanoid(char) return char and char:FindFirstChildOfClass("Humanoid") end
-local function GetRootPart(char) return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") end
-
-local function GetEquippedTool(player, char)
-    local tool = char and char:FindFirstChildWhichIsA("Tool")
+local function GetRoot(char) return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") end
+local function GetHead(char) return char:FindFirstChild("Head") end
+local function GetTool(player,char)
+    local tool = char:FindFirstChildWhichIsA("Tool")
     if tool then return tool end
-    local bp = player:FindFirstChild("Backpack")
-    if bp then
-        for _, item in ipairs(bp:GetChildren()) do
-            if item:IsA("Tool") then return item end
-        end
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        for _,i in pairs(backpack:GetChildren()) do if i:IsA("Tool") then return i end end
     end
     return nil
 end
-
-local function IsPlayerVisible(char, target)
-    if not ESPConfig.VisibilityCheck then return true end
-    local origin = CurrentCamera.CFrame.Position
-    local dir = target.Position - origin
+local function IsVisible(char,part)
+    local dir = (part.Position - Camera.CFrame.Position)
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Blacklist
-    params.FilterDescendantsInstances = {LocalPlayer.Character, char}
-    local res = Workspace:Raycast(origin, dir, params)
-    return res == nil
+    params.FilterDescendantsInstances = {LocalPlayer.Character,char}
+    local ray = Workspace:Raycast(Camera.CFrame.Position, dir, params)
+    return ray==nil
 end
-
-local function GetBoundingBox(char)
-    local root = GetRootPart(char)
-    if not root then return nil end
-    local pos, onScreen = CurrentCamera:WorldToViewportPoint(root.Position)
-    if not onScreen then return nil end
-    local dist = (CurrentCamera.CFrame.Position - root.Position).Magnitude
-    local scale = math.clamp(200 / math.max(dist, 1), 0.5, 2)
-    local boxHeight = math.clamp(scale * 40, 20, 80)
-    local boxWidth = boxHeight * 0.6
-    return {
-        TopLeft = Vector2.new(pos.X - boxWidth / 2, pos.Y - boxHeight / 2),
-        TopRight = Vector2.new(pos.X + boxWidth / 2, pos.Y - boxHeight / 2),
-        BottomLeft = Vector2.new(pos.X - boxWidth / 2, pos.Y + boxHeight / 2),
-        BottomRight = Vector2.new(pos.X + boxWidth / 2, pos.Y + boxHeight / 2),
-        Root = Vector2.new(pos.X, pos.Y),
-        Size = Vector2.new(boxWidth, boxHeight)
-    }
-end
-
-local function GetHealthColor(health, maxHealth)
-    local ratio = math.clamp(health / math.max(maxHealth, 1), 0, 1)
-    if ratio > 0.6 then return Color3.fromRGB(0, 255, 0)
-    elseif ratio > 0.3 then return Color3.fromRGB(255, 255, 0)
-    else return Color3.fromRGB(255, 0, 0) end
-end
-
---==================================================
--- ESP DRAWING
---==================================================
-local function CreateDrawing(type, props)
+local function CreateDrawing(type,props)
     local d = Drawing.new(type)
-    for k, v in pairs(props or {}) do
-        if d[k] ~= nil then d[k] = v end
-    end
+    for k,v in pairs(props) do if d[k]~=nil then d[k]=v end end
     return d
 end
-
 local function HideESP(esp)
-    for _, draw in pairs(esp.Drawings) do
-        if type(draw) == "table" then
-            for _, d in pairs(draw) do if d then pcall(function() d.Visible = false end) end
-            end
-        else
-            if draw then pcall(function() draw.Visible = false end) end
-        end
+    for _,d in pairs(esp.Drawings) do
+        if type(d)=="table" then for _,dd in pairs(d) do dd.Visible=false end
+        else d.Visible=false end
     end
-    if esp.Highlight then esp.Highlight.Enabled = false end
+    if esp.Highlight then esp.Highlight.Enabled=false end
 end
-
 local function RemoveESP(player)
     local esp = ESPObjects[player]
     if not esp then return end
-    esp.IsValid = false
-    for _, conn in pairs(esp.Connections) do if conn then pcall(function() conn:Disconnect() end) end end
-    for _, draw in pairs(esp.Drawings) do
-        if type(draw) == "table" then
-            for _, d in pairs(draw) do if d then pcall(function() d:Remove() end) end end
-        else
-            if draw then pcall(function() draw:Remove() end) end
-        end
+    esp.IsValid=false
+    for _,conn in pairs(esp.Connections) do if conn then pcall(function() conn:Disconnect() end) end end
+    for _,d in pairs(esp.Drawings) do
+        if type(d)=="table" then for _,dd in pairs(d) do pcall(function() dd:Remove() end) end
+        else pcall(function() d:Remove() end) end
     end
     if esp.Highlight then esp.Highlight:Destroy() end
-    ESPObjects[player] = nil
+    ESPObjects[player]=nil
 end
 
 local function CreateESP(player)
-    if player == LocalPlayer then return end
-    if ESPObjects[player] then return end
+    if player==LocalPlayer or ESPObjects[player] then return end
+    local esp={Player=player,Drawings={},Connections={},Character=player.Character,IsValid=true}
 
-    local esp = {Player = player, Drawings = {}, Connections = {}, Character = player.Character, IsValid = true}
-
-    -- Box lines
-    for i=1,4 do esp.Drawings["Box"..i] = CreateDrawing("Line",{Thickness=1,Color=ESPConfig.BoxColor,Visible=false}) end
-
-    -- Texts
-    esp.Drawings.Name = CreateDrawing("Text",{Text=player.Name,Size=ESPConfig.TextSize,Center=true,Outline=true,Font=ESPConfig.TextFont,Color=ESPConfig.NameColor,Visible=false})
-    esp.Drawings.Tool = CreateDrawing("Text",{Text="No Tool",Size=ESPConfig.TextSize-2,Center=true,Outline=true,Font=ESPConfig.TextFont,Color=ESPConfig.ToolColor,Visible=false})
-    esp.Drawings.Distance = CreateDrawing("Text",{Text="",Size=ESPConfig.TextSize,Center=true,Outline=true,Font=ESPConfig.TextFont,Color=ESPConfig.DistanceColor,Visible=false})
-    esp.Drawings.Health = CreateDrawing("Square",{Filled=true,Thickness=1,Color=ESPConfig.HealthBarColor,Visible=false})
-
-    -- Chams highlight
-    if ESPConfig.ChamsEnabled and esp.Character then
-        local highlight = Instance.new("Highlight")
-        highlight.Adornee = esp.Character
-        highlight.FillColor = ESPConfig.ChamsColor
-        highlight.FillTransparency = 0.55
-        highlight.OutlineTransparency = 1
-        highlight.Parent = CoreGui
-        esp.Highlight = highlight
+    -- ESP Elements
+    if ESPConfig.BoxEnabled then for i=1,4 do esp.Drawings["Box"..i]=CreateDrawing("Line",{Color=ESPConfig.BoxColor,Thickness=1,Visible=false}) end end
+    if ESPConfig.NameEnabled then esp.Drawings.Name=CreateDrawing("Text",{Text=player.Name,Size=14,Center=true,Outline=true,Color=ESPConfig.NameColor,Visible=false}) end
+    if ESPConfig.ToolEnabled then esp.Drawings.Tool=CreateDrawing("Text",{Text="No Tool",Size=12,Center=true,Outline=true,Color=ESPConfig.ToolColor,Visible=false}) end
+    if ESPConfig.DistanceEnabled then esp.Drawings.Distance=CreateDrawing("Text",{Text="",Size=14,Center=true,Outline=true,Color=ESPConfig.DistanceColor,Visible=false}) end
+    if ESPConfig.HealthBarEnabled then esp.Drawings.Health=CreateDrawing("Square",{Filled=true,Thickness=1,Color=ESPConfig.HealthBarColor,Visible=false}) end
+    if ESPConfig.SkeletonEnabled then esp.Drawings.Skeleton={} end
+    if ESPConfig.LineOfSightEnabled then
+        esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
+        esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Thickness=1,Visible=false})
     end
 
-    -- Character events
-    esp.Connections.CharacterAdded = player.CharacterAdded:Connect(function(char)
-        esp.Character = char
-        if esp.Highlight then esp.Highlight.Adornee = char esp.Highlight.Enabled = ESPConfig.ChamsEnabled end
+    esp.Connections.CharacterAdded=player.CharacterAdded:Connect(function(char)
+        esp.Character=char
     end)
-    esp.Connections.CharacterRemoving = player.CharacterRemoving:Connect(function()
-        HideESP(esp)
-        esp.Character = nil
-    end)
-
-    ESPObjects[player] = esp
+    esp.Connections.CharacterRemoving=player.CharacterRemoving:Connect(function() HideESP(esp) esp.Character=nil end)
+    ESPObjects[player]=esp
 end
 
 local function UpdateESP(player)
-    local esp = ESPObjects[player]
+    local esp=ESPObjects[player]
     if not esp or not esp.IsValid then return end
-    local character = esp.Character
-    if not character then HideESP(esp) return end
-    local root = GetRootPart(character)
-    local humanoid = GetHumanoid(character)
-    if not root or not humanoid or humanoid.Health <= 0 then HideESP(esp) return end
+    local char=esp.Character
+    if not char then HideESP(esp) return end
+    local root=GetRoot(char)
+    local hum=GetHumanoid(char)
+    local head=GetHead(char)
+    if not root or not hum or hum.Health<=0 then HideESP(esp) return end
+    local dist=(root.Position-Camera.CFrame.Position).Magnitude
+    if dist>ESPConfig.MaxDistance then HideESP(esp) return end
+    local visible=IsVisible(char,root)
 
-    local dist = (root.Position - CurrentCamera.CFrame.Position).Magnitude
-    if dist > ESPConfig.MaxDistance then HideESP(esp) return end
-    local visible = IsPlayerVisible(character, root)
-    local bbox = GetBoundingBox(character)
-    if not bbox then HideESP(esp) return end
+    local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+    if not onScreen then HideESP(esp) return end
+    local scale = math.clamp(200/math.max(dist,1),0.5,2)
+    local h = math.clamp(scale*40,20,80)
+    local w = h*0.6
 
     -- Box
     if ESPConfig.BoxEnabled then
-        local color = visible and ESPConfig.BoxColor or Color3.fromRGB(255,255,0)
-        local corners = {bbox.TopLeft,bbox.TopRight,bbox.BottomRight,bbox.BottomLeft}
+        local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
+                       Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
         for i=1,4 do
-            local line = esp.Drawings["Box"..i]
-            if line then line.From=corners[i] line.To=corners[i%4+1] line.Color=color line.Visible=true end
+            local line=esp.Drawings["Box"..i]
+            if line then line.From=corners[i] line.To=corners[i%4+1] line.Color=visible and ESPConfig.BoxColor or Color3.fromRGB(255,0,0) line.Visible=true end
+        end
+        if ESPConfig.NameEnabled then esp.Drawings.Name.Position=Vector2.new(pos.X,pos.Y-h/2-20) esp.Drawings.Name.Text=player.Name esp.Drawings.Name.Visible=true end
+        if ESPConfig.ToolEnabled then
+            local tool=GetTool(player,char)
+            esp.Drawings.Tool.Position=Vector2.new(pos.X,pos.Y-h/2-40)
+            esp.Drawings.Tool.Text=tool and ("Tool: "..tool.Name) or "No Tool"
+            esp.Drawings.Tool.Visible=true
+        end
+        if ESPConfig.DistanceEnabled then esp.Drawings.Distance.Position=Vector2.new(pos.X,pos.Y+h/2+10) esp.Drawings.Distance.Text=string.format("%.0f studs",dist) esp.Drawings.Distance.Visible=true end
+        if ESPConfig.HealthBarEnabled then
+            local ratio=hum.Health/math.max(hum.MaxHealth,1)
+            esp.Drawings.Health.Position=Vector2.new(corners[1].X-6,corners[1].Y+h*(1-ratio))
+            esp.Drawings.Health.Size=Vector2.new(4,h*ratio)
+            esp.Drawings.Health.Color=(ratio>0.6 and Color3.fromRGB(0,255,0)) or (ratio>0.3 and Color3.fromRGB(255,255,0)) or Color3.fromRGB(255,0,0)
+            esp.Drawings.Health.Visible=true
         end
     end
 
-    -- Name
-    if ESPConfig.NameEnabled and esp.Drawings.Name then
-        esp.Drawings.Name.Position = Vector2.new(bbox.Root.X,bbox.TopLeft.Y-20)
-        esp.Drawings.Name.Text = player.Name
-        esp.Drawings.Name.Color = ESPConfig.NameColor
-        esp.Drawings.Name.Visible = true
-    end
+    -- Line of Sight
+    if ESPConfig.LineOfSightEnabled and head and esp.Drawings.LineOfSight then
+        local startPos = head.Position
+        local lookVector = head.CFrame.LookVector
+        local endPos = startPos + lookVector * ESPConfig.LineLength
 
-    -- Tool
-    if ESPConfig.ToolEnabled and esp.Drawings.Tool then
-        local tool = GetEquippedTool(player, character)
-        esp.Drawings.Tool.Position = Vector2.new(bbox.Root.X,bbox.TopLeft.Y-40)
-        esp.Drawings.Tool.Text = tool and ("Tool: "..tool.Name) or "No Tool"
-        esp.Drawings.Tool.Color = ESPConfig.ToolColor
-        esp.Drawings.Tool.Visible = true
-    end
+        local start2D, onScreenStart = Camera:WorldToViewportPoint(startPos)
+        local end2D, onScreenEnd = Camera:WorldToViewportPoint(endPos)
+        if onScreenStart and onScreenEnd then
+            local line = esp.Drawings.LineOfSight
+            line.From = Vector2.new(start2D.X, start2D.Y)
+            line.To = Vector2.new(end2D.X, end2D.Y)
+            line.Visible = true
 
-    -- Distance
-    if ESPConfig.DistanceEnabled and esp.Drawings.Distance then
-        esp.Drawings.Distance.Position = Vector2.new(bbox.Root.X,bbox.BottomLeft.Y+10)
-        esp.Drawings.Distance.Text = string.format("%.0f studs",dist)
-        esp.Drawings.Distance.Color = ESPConfig.DistanceColor
-        esp.Drawings.Distance.Visible = true
-    end
-
-    -- Health
-    if ESPConfig.HealthBarEnabled and esp.Drawings.Health then
-        local hPerc = humanoid.Health / math.max(humanoid.MaxHealth,1)
-        esp.Drawings.Health.Position = Vector2.new(bbox.TopLeft.X-6,bbox.BottomLeft.Y-bbox.Size.Y*hPerc)
-        esp.Drawings.Health.Size = Vector2.new(4,bbox.Size.Y*hPerc)
-        esp.Drawings.Health.Color = GetHealthColor(humanoid.Health,humanoid.MaxHealth)
-        esp.Drawings.Health.Visible = true
-    end
-
-    -- Chams
-    if esp.Highlight then
-        esp.Highlight.FillColor = ESPConfig.ChamsColor
-        esp.Highlight.Enabled = ESPConfig.ChamsEnabled
+            local arrow = esp.Drawings.LOSArrow
+            local dirVec = (line.To - line.From).Unit
+            local perp = Vector2.new(-dirVec.Y, dirVec.X)
+            local size = 6
+            arrow.PointA = line.To
+            arrow.PointB = line.To - dirVec*size + perp*size*0.5
+            arrow.PointC = line.To - dirVec*size - perp*size*0.5
+            arrow.Visible = true
+        else
+            esp.Drawings.LineOfSight.Visible = false
+            esp.Drawings.LOSArrow.Visible = false
+        end
     end
 end
 
--- Main render loop
 RunService.RenderStepped:Connect(function()
-    for player,_ in pairs(ESPObjects) do pcall(UpdateESP,player) end
+    for p,_ in pairs(ESPObjects) do pcall(UpdateESP,p) end
 end)
 
--- PLAYER MONITORING
-local function InitializePlayers()
-    for _,player in ipairs(Players:GetPlayers()) do if player~=LocalPlayer then CreateESP(player) end end
-    Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player) if player~=LocalPlayer then CreateESP(player) end end)
-    Connections.PlayerRemoving = Players.PlayerRemoving:Connect(RemoveESP)
+for _,p in pairs(Players:GetPlayers()) do if p~=LocalPlayer then CreateESP(p) end end
+Players.PlayerAdded:Connect(function(p) if p~=LocalPlayer then p.CharacterAdded:Connect(function() CreateESP(p) end) end end)
+Players.PlayerRemoving:Connect(RemoveESP)
+
+-- ===== ULTRA MODERN GUI =====
+local GUI = Instance.new("ScreenGui",CoreGui)
+GUI.Name = "CarbonXESP_UltraModern"
+GUI.IgnoreGuiInset = true
+
+-- Main Container with modern styling
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 450, 0, 600)
+Main.Position = UDim2.new(0, 50, 0.5, -300)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+Main.BorderSizePixel = 0
+Main.Parent = GUI
+Main.Active = true
+Main.Draggable = true
+
+-- Modern rounded corners effect
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = Main
+
+-- Drop shadow effect
+local Shadow = Instance.new("ImageLabel")
+Shadow.Size = UDim2.new(1, 20, 1, 20)
+Shadow.Position = UDim2.new(0, -10, 0, -10)
+Shadow.BackgroundTransparency = 1
+Shadow.Image = "rbxassetid://5554236805"
+Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.ImageTransparency = 0.8
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(23,23,277,277)
+Shadow.Parent = Main
+Shadow.ZIndex = -1
+
+-- Header with gradient
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 60)
+Header.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+Header.BorderSizePixel = 0
+Header.Parent = Main
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 12)
+HeaderCorner.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -100, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "CARBON X ESP"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local Subtitle = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -100, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 25)
+Title.BackgroundTransparency = 1
+Title.Text = "Premium Edition"
+Title.TextColor3 = Color3.fromRGB(200, 200, 200)
+Title.Font = Enum.Font.Gotham
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+-- Control buttons container
+local ControlButtons = Instance.new("Frame")
+ControlButtons.Size = UDim2.new(0, 70, 1, 0)
+ControlButtons.Position = UDim2.new(1, -75, 0, 0)
+ControlButtons.BackgroundTransparency = 1
+ControlButtons.Parent = Header
+
+-- Minimize button
+local Minimize = Instance.new("TextButton")
+Minimize.Size = UDim2.new(0, 25, 0, 25)
+Minimize.Position = UDim2.new(0, 5, 0.5, -12)
+Minimize.Text = "_"
+Minimize.Font = Enum.Font.GothamBold
+Minimize.TextColor3 = Color3.fromRGB(255, 255, 255)
+Minimize.TextSize = 16
+Minimize.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+Minimize.BorderSizePixel = 0
+Minimize.Parent = ControlButtons
+
+local MinimizeCorner = Instance.new("UICorner")
+MinimizeCorner.CornerRadius = UDim.new(0, 6)
+MinimizeCorner.Parent = Minimize
+
+-- Close button
+local Close = Instance.new("TextButton")
+Close.Size = UDim2.new(0, 25, 0, 25)
+Close.Position = UDim2.new(0, 35, 0.5, -12)
+Close.Text = "×"
+Close.Font = Enum.Font.GothamBold
+Close.TextColor3 = Color3.fromRGB(255, 255, 255)
+Close.TextSize = 18
+Close.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+Close.BorderSizePixel = 0
+Close.Parent = ControlButtons
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = Close
+
+-- Content area
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, -40, 1, -100)
+Content.Position = UDim2.new(0, 20, 0, 80)
+Content.BackgroundTransparency = 1
+Content.Parent = Main
+
+-- Scrollable content
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Size = UDim2.new(1, 0, 1, 0)
+Scroll.BackgroundTransparency = 1
+Scroll.BorderSizePixel = 0
+Scroll.ScrollBarThickness = 4
+Scroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 800)
+Scroll.Parent = Content
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 12)
+Layout.Parent = Scroll
+
+-- Function to create modern toggle switches
+local function CreateToggle(label, configKey, order)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(1, 0, 0, 50)
+    Container.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Container.BorderSizePixel = 0
+    Container.Parent = Scroll
+    Container.LayoutOrder = order
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 8)
+    Corner.Parent = Container
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, -10, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = label
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.Font = Enum.Font.Gotham
+    Label.TextSize = 14
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Container
+    
+    -- Toggle background
+    local ToggleBg = Instance.new("Frame")
+    ToggleBg.Size = UDim2.new(0, 50, 0, 24)
+    ToggleBg.Position = UDim2.new(1, -65, 0.5, -12)
+    ToggleBg.BackgroundColor3 = ESPConfig[configKey] and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(80, 80, 100)
+    ToggleBg.BorderSizePixel = 0
+    ToggleBg.Parent = Container
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 12)
+    ToggleCorner.Parent = ToggleBg
+    
+    -- Toggle knob
+    local ToggleKnob = Instance.new("Frame")
+    ToggleKnob.Size = UDim2.new(0, 20, 0, 20)
+    ToggleKnob.Position = UDim2.new(0, ESPConfig[configKey] and 26 or 2, 0.5, -10)
+    ToggleKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleKnob.BorderSizePixel = 0
+    ToggleKnob.Parent = ToggleBg
+    
+    local KnobCorner = Instance.new("UICorner")
+    KnobCorner.CornerRadius = UDim.new(0, 10)
+    KnobCorner.Parent = ToggleKnob
+    
+    -- Toggle button
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(1, 0, 1, 0)
+    ToggleButton.BackgroundTransparency = 1
+    ToggleButton.Text = ""
+    ToggleButton.Parent = Container
+    
+    ToggleButton.MouseButton1Click:Connect(function()
+        ESPConfig[configKey] = not ESPConfig[configKey]
+        
+        -- Animate toggle
+        local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local bgTween = TweenService:Create(ToggleBg, tweenInfo, {
+            BackgroundColor3 = ESPConfig[configKey] and Color3.fromRGB(0, 170, 255) or Color3.fromRGB(80, 80, 100)
+        })
+        local knobTween = TweenService:Create(ToggleKnob, tweenInfo, {
+            Position = UDim2.new(0, ESPConfig[configKey] and 26 or 2, 0.5, -10)
+        })
+        
+        bgTween:Play()
+        knobTween:Play()
+    end)
+    
+    return Container
 end
 
---==================================================
--- HELPER: Light UI Particle Accent (UI-based)
---==================================================
-local function SpawnUIParticles(container, colorOverride)
-    -- container is a Frame or any GuiObject parent (should be one created by Rayfield such as a Section label)
-    -- This spawns a few tiny circles that float and fade (lightweight)
-    pcall(function()
-        if not container then return end
-        local limit = 6
-        for i = 1, limit do
-            spawn(function()
-                local dot = Instance.new("ImageLabel")
-                dot.Name = "AccentParticle"
-                dot.Image = "rbxassetid://3926305904" -- small circle asset (UI)
-                dot.ScaleType = Enum.ScaleType.Fit
-                dot.Size = UDim2.new(0,6,0,6)
-                dot.AnchorPoint = Vector2.new(0.5,0.5)
-                dot.BackgroundTransparency = 1
-                dot.Position = UDim2.new(math.random(), 0, math.random(), 0)
-                dot.ZIndex = 10
-                dot.ImageColor3 = colorOverride or ESPConfig.BoxColor
-                dot.Parent = container
-
-                local tweenInfo = TweenInfo.new(1.1 + math.random() * 0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
-                local targetPos = UDim2.new(math.clamp(dot.Position.X.Scale + (math.random()-0.5)*0.12, 0, 1), 0,
-                                            math.clamp(dot.Position.Y.Scale - (0.2 + math.random()*0.3), 0, 1), 0)
-                pcall(function()
-                    local t1 = TweenService:Create(dot, tweenInfo, {Position = targetPos, Size = UDim2.new(0, 22, 0, 22), ImageTransparency = 1})
-                    t1:Play()
-                    t1.Completed:Wait()
-                end)
-                pcall(function() dot:Destroy() end)
-            end)
-            wait(0.06)
+-- Function to create modern slider
+local function CreateSlider(label, configKey, min, max, defaultValue, order)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(1, 0, 0, 70)
+    Container.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Container.BorderSizePixel = 0
+    Container.Parent = Scroll
+    Container.LayoutOrder = order
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 8)
+    Corner.Parent = Container
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, -30, 0, 20)
+    Label.Position = UDim2.new(0, 15, 0, 10)
+    Label.BackgroundTransparency = 1
+    Label.Text = label
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.Font = Enum.Font.Gotham
+    Label.TextSize = 14
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = Container
+    
+    local ValueLabel = Instance.new("TextLabel")
+    ValueLabel.Size = UDim2.new(0, 60, 0, 20)
+    ValueLabel.Position = UDim2.new(1, -75, 0, 10)
+    ValueLabel.BackgroundTransparency = 1
+    ValueLabel.Text = tostring(ESPConfig[configKey])
+    ValueLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+    ValueLabel.Font = Enum.Font.GothamBold
+    ValueLabel.TextSize = 14
+    ValueLabel.Parent = Container
+    
+    -- Slider track
+    local Track = Instance.new("Frame")
+    Track.Size = UDim2.new(1, -30, 0, 6)
+    Track.Position = UDim2.new(0, 15, 0, 40)
+    Track.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    Track.BorderSizePixel = 0
+    Track.Parent = Container
+    
+    local TrackCorner = Instance.new("UICorner")
+    TrackCorner.CornerRadius = UDim.new(0, 3)
+    TrackCorner.Parent = Track
+    
+    -- Slider fill
+    local Fill = Instance.new("Frame")
+    Fill.Size = UDim2.new((ESPConfig[configKey] - min) / (max - min), 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    Fill.BorderSizePixel = 0
+    Fill.Parent = Track
+    
+    local FillCorner = Instance.new("UICorner")
+    FillCorner.CornerRadius = UDim.new(0, 3)
+    FillCorner.Parent = Fill
+    
+    -- Slider knob
+    local Knob = Instance.new("Frame")
+    Knob.Size = UDim2.new(0, 16, 0, 16)
+    Knob.Position = UDim2.new((ESPConfig[configKey] - min) / (max - min), -8, 0.5, -8)
+    Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Knob.BorderSizePixel = 0
+    Knob.Parent = Track
+    
+    local KnobCorner = Instance.new("UICorner")
+    KnobCorner.CornerRadius = UDim.new(0, 8)
+    KnobCorner.Parent = Knob
+    
+    -- Slider button
+    local SliderButton = Instance.new("TextButton")
+    SliderButton.Size = UDim2.new(1, 0, 1, 0)
+    SliderButton.BackgroundTransparency = 1
+    SliderButton.Text = ""
+    SliderButton.Parent = Track
+    
+    local dragging = false
+    
+    local function updateSlider(input)
+        local relativeX = (input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X
+        local value = math.floor(min + (max - min) * math.clamp(relativeX, 0, 1))
+        
+        ESPConfig[configKey] = value
+        ValueLabel.Text = tostring(value)
+        
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local fillTween = TweenService:Create(Fill, tweenInfo, {Size = UDim2.new((value - min) / (max - min), 0, 1, 0)})
+        local knobTween = TweenService:Create(Knob, tweenInfo, {Position = UDim2.new((value - min) / (max - min), -8, 0.5, -8)})
+        
+        fillTween:Play()
+        knobTween:Play()
+    end
+    
+    SliderButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            updateSlider(input)
         end
     end)
-end
-
---==================================================
--- PREMIUM RAYFIELD USER INTERFACE + ANIMATIONS
---==================================================
-local success, Rayfield = pcall(function() return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Rayfield/main/source"))() end)
-if success and Rayfield then
-
-    -- Accent colors
-    local Accent = Color3.fromRGB(0, 170, 255)
-    local Glow = Color3.fromRGB(0, 205, 255)
-
-    local Window = Rayfield:CreateWindow({
-        Name = "💎 Carbon ESP – Premium Edition",
-        LoadingTitle = "Carbon Visual Suite",
-        LoadingSubtitle = "Polished, fast, premium",
-        Icon = 4483362456,
-        Theme = "Dark",
-        Acrylic = true,
-        Transparency = 0,
-        Color = Accent,
-        ConfigurationSaving = {Enabled = true, FileName = "CarbonPremiumConfig"}
-    })
-
-    -- Create a little internal mapping for animated labels
-    local AnimatedLabels = {} -- flag -> label reference
-
-    local function PulseLabel(flag)
-        local label = AnimatedLabels[flag]
-        if not label then return end
-        -- animate scale & text color for a pulse
-        local origSize = label.TextSize
-        local origColor = label.TextColor3
-        local tween1 = TweenService:Create(label, TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {TextColor3 = Glow})
-        tween1:Play()
-        spawn(function()
-            wait(0.18)
-            local tween2 = TweenService:Create(label, TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {TextColor3 = origColor})
-            tween2:Play()
-        end)
-    end
-
-    -- Matching splash-screen (ScreenGui)
-    local function CreateSplash()
-        local splashGui = Instance.new("ScreenGui")
-        splashGui.Name = "CarbonSplash"
-        splashGui.ResetOnSpawn = false
-        splashGui.IgnoreGuiInset = true
-        splashGui.Parent = CoreGui
-
-        local root = Instance.new("Frame")
-        root.Size = UDim2.new(0,540,0,280)
-        root.Position = UDim2.new(0.5,0,0.22,0)
-        root.AnchorPoint = Vector2.new(0.5,0)
-        root.BackgroundTransparency = 0
-        root.BackgroundColor3 = Color3.fromRGB(12,12,14)
-        root.BorderSizePixel = 0
-        root.Parent = splashGui
-        root.ClipsDescendants = true
-
-        local uicorner = Instance.new("UICorner", root)
-        uicorner.CornerRadius = UDim.new(0,18)
-
-        local logo = Instance.new("TextLabel")
-        logo.Size = UDim2.new(1,-40,0,64)
-        logo.Position = UDim2.new(0,20,0,18)
-        logo.BackgroundTransparency = 1
-        logo.Text = "Carbon Visual Suite"
-        logo.TextColor3 = Color3.fromRGB(235,235,235)
-        logo.Font = Enum.Font.GothamBold
-        logo.TextSize = 30
-        logo.TextXAlignment = Enum.TextXAlignment.Left
-        logo.Parent = root
-
-        local subtitle = Instance.new("TextLabel")
-        subtitle.Size = UDim2.new(1,-40,0,26)
-        subtitle.Position = UDim2.new(0,20,0,70)
-        subtitle.BackgroundTransparency = 1
-        subtitle.Text = "Premium ESP • Modern UI • Fast Performance"
-        subtitle.Font = Enum.Font.Gotham
-        subtitle.TextSize = 15
-        subtitle.TextColor3 = Color3.fromRGB(190,190,190)
-        subtitle.TextXAlignment = Enum.TextXAlignment.Left
-        subtitle.Parent = root
-
-        -- Decorative accent bar
-        local accent = Instance.new("Frame")
-        accent.Size = UDim2.new(0,240,0,6)
-        accent.Position = UDim2.new(0,20,0,108)
-        accent.BackgroundColor3 = Accent
-        accent.BackgroundTransparency = 0
-        accent.BorderSizePixel = 0
-        accent.Parent = root
-        local aCorner = Instance.new("UICorner", accent)
-        aCorner.CornerRadius = UDim.new(0,6)
-
-        -- Animated gradient on accent
-        local grad = Instance.new("UIGradient", accent)
-        grad.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Accent),
-            ColorSequenceKeypoint.new(1, Glow)
-        }
-        grad.Rotation = 0
-
-        -- Splash description box
-        local card = Instance.new("Frame")
-        card.Size = UDim2.new(1,-40,0,84)
-        card.Position = UDim2.new(0,20,0,128)
-        card.BackgroundColor3 = Color3.fromRGB(18,18,22)
-        card.BorderSizePixel = 0
-        card.Parent = root
-        local cCorner = Instance.new("UICorner", card)
-        cCorner.CornerRadius = UDim.new(0,10)
-
-        local cardTxt = Instance.new("TextLabel")
-        cardTxt.Size = UDim2.new(1,-24,1,-20)
-        cardTxt.Position = UDim2.new(0,12,0,10)
-        cardTxt.BackgroundTransparency = 1
-        cardTxt.Text = "Welcome to Carbon's Premium ESP.\nElegant visuals, intuitive controls, and minimal overhead. Enjoy."
-        cardTxt.TextColor3 = Color3.fromRGB(200,200,200)
-        cardTxt.TextSize = 14
-        cardTxt.Font = Enum.Font.Gotham
-        cardTxt.TextWrapped = true
-        cardTxt.Parent = card
-
-        -- Particle accents in splash (makes it feel premium)
-        spawn(function() SpawnUIParticles(card, Accent) end)
-        spawn(function() SpawnUIParticles(root, Glow) end)
-
-        -- Intro animations
-        root.AnchorPoint = Vector2.new(0.5, 0)
-        root.Position = UDim2.new(0.5,0,-0.5,0)
-        root.Size = UDim2.new(0,540,0,280)
-        local inTween = TweenService:Create(root, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5,0,0.22,0)})
-        local fadeIn = TweenService:Create(root, TweenInfo.new(0.6), {BackgroundTransparency = 0})
-        inTween:Play(); fadeIn:Play()
-        wait(2.1)
-        -- exit animations
-        local outTween = TweenService:Create(root, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5,0,-0.6,0), BackgroundTransparency = 1})
-        outTween:Play()
-        outTween.Completed:Wait()
-        splashGui:Destroy()
-    end
-
-    -- Create the splash on load (do not block UI creation)
-    spawn(CreateSplash)
-
-    -- Create tabs
-    local ESPTab = Window:CreateTab("ESP", 4483362456)
-    local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362456)
-
-    -- Visual Elements with category divider and small decorative label
-    ESPTab:CreateSection("Visual Elements")
-    -- custom divider label (fancy)
-    ESPTab:CreateLabel("────────────────────────  Visuals  ────────────────────────")
-
-    local toggleList = {
-        {"Box ESP", "BoxEnabled"},
-        {"Names", "NameEnabled"},
-        {"Tools", "ToolEnabled"},
-        {"Distance", "DistanceEnabled"},
-        {"Health Bars", "HealthBarEnabled"},
-        {"Skeleton", "SkeletonEnabled"},
-        {"Chams", "ChamsEnabled"},
-    }
-
-    for _, t in ipairs(toggleList) do
-        -- create a small decorative label per toggle to animate
-        ESPTab:CreateLabel(" ") -- spacer
-        local flag = t[2]
-        local label = ESPTab:CreateLabel(" "..t[1]) -- this returns a label inside Rayfield's layout (used for pulse)
-        AnimatedLabels[flag] = label
-
-        ESPTab:CreateToggle({
-            Name = t[1],
-            CurrentValue = ESPConfig[flag],
-            Flag = flag,
-            Callback = function(value)
-                ESPConfig[flag] = value
-                -- pulse animation
-                pcall(PulseLabel, flag)
-                -- particle accent near visuals area (lightweight)
-                spawn(function()
-                    -- Try to get the last created section container from CoreGui and spawn particles
-                    -- This is a best-effort: runtime chooses a place in UI, particles are lightweight
-                    wait(0.02)
-                    SpawnUIParticles(label, Accent)
-                end)
-            end
-        })
-    end
-
-    -- Divider
-    ESPTab:CreateLabel("────────────────────────  Colors  ────────────────────────")
-    ESPTab:CreateSection("Color Customization")
-
-    local colorList = {
-        {"Box Color", "BoxColor"},
-        {"Name Color", "NameColor"},
-        {"Tool Color", "ToolColor"},
-        {"Distance Color", "DistanceColor"},
-        {"Health Color", "HealthBarColor"},
-        {"Skeleton Color", "SkeletonColor"},
-        {"Chams Color", "ChamsColor"},
-    }
-
-    for _, c in ipairs(colorList) do
-        local flag = c[2]
-        ESPTab:CreateColorPicker({
-            Name = c[1],
-            Color = ESPConfig[flag],
-            Flag = flag,
-            Callback = function(color)
-                ESPConfig[flag] = color
-                -- small particle accent and label pulse on color change
-                pcall(PulseLabel, flag)
-                spawn(function() SpawnUIParticles(ESPTab, color) end)
-            end
-        })
-    end
-
-    ESPTab:CreateLabel("────────────────────────  Performance  ────────────────────────")
-    ESPTab:CreateSection("Performance")
-
-    ESPTab:CreateSlider({
-        Name = "ESP Max Distance",
-        Min = 50,
-        Max = 2000,
-        CurrentValue = ESPConfig.MaxDistance,
-        Flag = "MaxDistance",
-        Callback = function(v) ESPConfig.MaxDistance = v end
-    })
-
-    -- Settings tab (with dividers & particle accent)
-    SettingsTab:CreateSection("Configuration")
-    SettingsTab:CreateLabel("────────────────────────  Settings  ────────────────────────")
-
-    SettingsTab:CreateButton({
-        Name = "💾 Save Settings",
-        Callback = function() Window:SaveConfiguration() spawn(function() SpawnUIParticles(SettingsTab, Accent) end) end
-    })
-
-    SettingsTab:CreateButton({
-        Name = "📁 Load Settings",
-        Callback = function() Window:LoadConfiguration() spawn(function() SpawnUIParticles(SettingsTab, Glow) end) end
-    })
-
-    SettingsTab:CreateParagraph({
-        Title = "Premium Carbon ESP",
-        Content = "Designed for clarity, speed, and crisp visuals. Tabs animate lightly and accent particles show on interactions."
-    })
-
-    -- Quick tab animation when tab is opened/used (best-effort)
-    -- Rayfield doesn't expose an official 'TabSelected' in all builds; we add a tiny interaction animation on button click using a utility button
-    local function QuickTabPulse(tabName)
-        -- Create a temporary floating highlight frame near the screen center to suggest tab animation
-        local pulseGui = Instance.new("ScreenGui")
-        pulseGui.Name = "TabPulse"
-        pulseGui.ResetOnSpawn = false
-        pulseGui.Parent = CoreGui
-
-        local frame = Instance.new("Frame")
-        frame.Size = UDim2.new(0, 180, 0, 46)
-        frame.Position = UDim2.new(0.5, -90, 0.08, 0)
-        frame.AnchorPoint = Vector2.new(0.5,0)
-        frame.BackgroundTransparency = 1
-        frame.Parent = pulseGui
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1,0,1,0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = "Opened • "..tabName
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 16
-        lbl.TextColor3 = Accent
-        lbl.Parent = frame
-
-        local tweenIn = TweenService:Create(frame, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
-        local tweenOut = TweenService:Create(frame, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {BackgroundTransparency = 1})
-        tweenIn:Play()
-        wait(0.8)
-        tweenOut:Play()
-        tweenOut.Completed:Wait()
-        pcall(function() pulseGui:Destroy() end)
-    end
-
-    -- Simple UI hook: add a small "open tab" helper button in Settings so user can trigger the demonstration
-    SettingsTab:CreateButton({
-        Name = "Demo Tab Animation",
-        Callback = function()
-            QuickTabPulse("ESP")
-            SpawnUIParticles(SettingsTab, Glow)
+    
+    SliderButton.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
         end
-    })
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(input)
+        end
+    end)
+    
+    return Container
 end
 
--- Initialize players after UI ready
-InitializePlayers()
-print("💎 Carbon Premium ESP (Animated) Loaded Successfully!")
+-- Create all toggles and sliders
+CreateToggle("Player Box ESP", "BoxEnabled", 1)
+CreateToggle("Player Names", "NameEnabled", 2)
+CreateToggle("Tool Display", "ToolEnabled", 3)
+CreateToggle("Distance Display", "DistanceEnabled", 4)
+CreateToggle("Health Bar", "HealthBarEnabled", 5)
+CreateToggle("Skeleton ESP", "SkeletonEnabled", 6)
+CreateToggle("Player Chams", "ChamsEnabled", 7)
+CreateToggle("Line of Sight", "LineOfSightEnabled", 8)
+
+CreateSlider("Max Distance", "MaxDistance", 50, 1000, 500, 9)
+CreateSlider("LOS Length", "LineLength", 10, 100, 25, 10)
+CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 11)
+
+-- UI State management
+local isMinimized = false
+local originalSize = Main.Size
+local minimizedSize = UDim2.new(0, 450, 0, 60)
+
+Minimize.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    if isMinimized then
+        local tween = TweenService:Create(Main, tweenInfo, {Size = minimizedSize})
+        tween:Play()
+        Minimize.Text = "+"
+    else
+        local tween = TweenService:Create(Main, tweenInfo, {Size = originalSize})
+        tween:Play()
+        Minimize.Text = "_"
+    end
+end)
+
+Close.MouseButton1Click:Connect(function()
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(Main, tweenInfo, {Size = UDim2.new(0, 0, 0, 0)})
+    tween:Play()
+    
+    tween.Completed:Connect(function()
+        GUI:Destroy()
+    end)
+end)
+
+-- Auto-adjust canvas size
+Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    Scroll.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 20)
+end)
+
+print("✅ Carbon X ESP Ultra-Modern GUI Loaded!")
