@@ -1,6 +1,6 @@
 --[[
 Carbon X ESP Premium - Ultra-Modern GUI
-Features: Sleek dark theme, animated toggles, modern sliders, movable/hideable interface
+Features: Independent health bars, working chams, wall check, visibility check
 Client-side only
 ]]
 
@@ -35,7 +35,11 @@ local ESPConfig = {
     LineOfSightEnabled=true,
     LineColor=Color3.fromRGB(0,255,255),
     LineThickness=2,
-    LineLength=25
+    LineLength=25,
+    WallCheckEnabled=true,
+    WallCheckColor=Color3.fromRGB(255,255,0),
+    VisibilityCheckEnabled=true,
+    VisibilityCheckColor=Color3.fromRGB(255,0,0)
 }
 
 local ESPObjects = {}
@@ -53,6 +57,7 @@ local function GetTool(player,char)
     end
     return nil
 end
+
 local function IsVisible(char,part)
     local dir = (part.Position - Camera.CFrame.Position)
     local params = RaycastParams.new()
@@ -61,11 +66,30 @@ local function IsVisible(char,part)
     local ray = Workspace:Raycast(Camera.CFrame.Position, dir, params)
     return ray==nil
 end
+
+-- New: Check if player can see local player
+local function IsPlayerLookingAtMe(playerChar)
+    if not playerChar or not LocalPlayer.Character then return false end
+    
+    local playerHead = playerChar:FindFirstChild("Head")
+    local myHead = LocalPlayer.Character:FindFirstChild("Head")
+    if not playerHead or not myHead then return false end
+    
+    local directionToMe = (myHead.Position - playerHead.Position).Unit
+    local playerLookDirection = playerHead.CFrame.LookVector
+    
+    local dotProduct = directionToMe:Dot(playerLookDirection)
+    
+    -- If dot product is close to 1, they're looking roughly in our direction
+    return dotProduct > 0.7
+end
+
 local function CreateDrawing(type,props)
     local d = Drawing.new(type)
     for k,v in pairs(props) do if d[k]~=nil then d[k]=v end end
     return d
 end
+
 local function HideESP(esp)
     for _,d in pairs(esp.Drawings) do
         if type(d)=="table" then for _,dd in pairs(d) do dd.Visible=false end
@@ -73,6 +97,7 @@ local function HideESP(esp)
     end
     if esp.Highlight then esp.Highlight.Enabled=false end
 end
+
 local function RemoveESP(player)
     local esp = ESPObjects[player]
     if not esp then return end
@@ -90,22 +115,54 @@ local function CreateESP(player)
     if player==LocalPlayer or ESPObjects[player] then return end
     local esp={Player=player,Drawings={},Connections={},Character=player.Character,IsValid=true}
 
-    -- ESP Elements
+    -- ESP Elements - Now independent
     if ESPConfig.BoxEnabled then for i=1,4 do esp.Drawings["Box"..i]=CreateDrawing("Line",{Color=ESPConfig.BoxColor,Thickness=1,Visible=false}) end end
     if ESPConfig.NameEnabled then esp.Drawings.Name=CreateDrawing("Text",{Text=player.Name,Size=14,Center=true,Outline=true,Color=ESPConfig.NameColor,Visible=false}) end
     if ESPConfig.ToolEnabled then esp.Drawings.Tool=CreateDrawing("Text",{Text="No Tool",Size=12,Center=true,Outline=true,Color=ESPConfig.ToolColor,Visible=false}) end
     if ESPConfig.DistanceEnabled then esp.Drawings.Distance=CreateDrawing("Text",{Text="",Size=14,Center=true,Outline=true,Color=ESPConfig.DistanceColor,Visible=false}) end
-    if ESPConfig.HealthBarEnabled then esp.Drawings.Health=CreateDrawing("Square",{Filled=true,Thickness=1,Color=ESPConfig.HealthBarColor,Visible=false}) end
+    if ESPConfig.HealthBarEnabled then 
+        esp.Drawings.Health = CreateDrawing("Square",{Filled=true,Thickness=1,Color=ESPConfig.HealthBarColor,Visible=false})
+        esp.Drawings.HealthBackground = CreateDrawing("Square",{Filled=true,Thickness=1,Color=Color3.fromRGB(50,50,50),Visible=false})
+    end
     if ESPConfig.SkeletonEnabled then esp.Drawings.Skeleton={} end
     if ESPConfig.LineOfSightEnabled then
         esp.Drawings.LineOfSight = CreateDrawing("Line",{Color=ESPConfig.LineColor,Thickness=ESPConfig.LineThickness,Visible=false})
         esp.Drawings.LOSArrow = CreateDrawing("Triangle",{Color=ESPConfig.LineColor,Thickness=1,Visible=false,Filled=true})
     end
+    
+    -- Chams Highlight
+    if ESPConfig.ChamsEnabled then
+        esp.Highlight = Instance.new("Highlight")
+        esp.Highlight.FillColor = ESPConfig.ChamsColor
+        esp.Highlight.OutlineColor = ESPConfig.ChamsColor
+        esp.Highlight.FillTransparency = 0.5
+        esp.Highlight.OutlineTransparency = 0
+        esp.Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        esp.Highlight.Parent = Camera
+        esp.Highlight.Enabled = false
+    end
 
     esp.Connections.CharacterAdded=player.CharacterAdded:Connect(function(char)
         esp.Character=char
+        if esp.Highlight then
+            esp.Highlight.Adornee = char
+        end
     end)
-    esp.Connections.CharacterRemoving=player.CharacterRemoving:Connect(function() HideESP(esp) esp.Character=nil end)
+    
+    esp.Connections.CharacterRemoving=player.CharacterRemoving:Connect(function() 
+        HideESP(esp) 
+        esp.Character=nil 
+        if esp.Highlight then
+            esp.Highlight.Adornee = nil
+            esp.Highlight.Enabled = false
+        end
+    end)
+    
+    -- Set initial highlight adornee
+    if esp.Character and esp.Highlight then
+        esp.Highlight.Adornee = esp.Character
+    end
+    
     ESPObjects[player]=esp
 end
 
@@ -121,36 +178,120 @@ local function UpdateESP(player)
     local dist=(root.Position-Camera.CFrame.Position).Magnitude
     if dist>ESPConfig.MaxDistance then HideESP(esp) return end
     local visible=IsVisible(char,root)
-
+    
+    -- New: Wall check and visibility check
+    local isBehindWall = not visible
+    local isLookingAtMe = IsPlayerLookingAtMe(char)
+    
     local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
     if not onScreen then HideESP(esp) return end
     local scale = math.clamp(200/math.max(dist,1),0.5,2)
     local h = math.clamp(scale*40,20,80)
     local w = h*0.6
 
-    -- Box
+    -- Determine colors based on wall and visibility checks
+    local boxColor = ESPConfig.BoxColor
+    local nameColor = ESPConfig.NameColor
+    local toolColor = ESPConfig.ToolColor
+    local distanceColor = ESPConfig.DistanceColor
+    local skeletonColor = ESPConfig.SkeletonColor
+    local lineColor = ESPConfig.LineColor
+    
+    if ESPConfig.WallCheckEnabled and isBehindWall then
+        boxColor = ESPConfig.WallCheckColor
+        nameColor = ESPConfig.WallCheckColor
+        toolColor = ESPConfig.WallCheckColor
+        distanceColor = ESPConfig.WallCheckColor
+        skeletonColor = ESPConfig.WallCheckColor
+        lineColor = ESPConfig.WallCheckColor
+    end
+    
+    if ESPConfig.VisibilityCheckEnabled and isLookingAtMe then
+        boxColor = ESPConfig.VisibilityCheckColor
+        nameColor = ESPConfig.VisibilityCheckColor
+        toolColor = ESPConfig.VisibilityCheckColor
+        distanceColor = ESPConfig.VisibilityCheckColor
+        skeletonColor = ESPConfig.VisibilityCheckColor
+        lineColor = ESPConfig.VisibilityCheckColor
+    end
+
+    -- Box (Independent from health bar)
     if ESPConfig.BoxEnabled then
         local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
                        Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
         for i=1,4 do
             local line=esp.Drawings["Box"..i]
-            if line then line.From=corners[i] line.To=corners[i%4+1] line.Color=visible and ESPConfig.BoxColor or Color3.fromRGB(255,0,0) line.Visible=true end
+            if line then 
+                line.From=corners[i] 
+                line.To=corners[i%4+1] 
+                line.Color=boxColor
+                line.Visible=true 
+            end
         end
-        if ESPConfig.NameEnabled then esp.Drawings.Name.Position=Vector2.new(pos.X,pos.Y-h/2-20) esp.Drawings.Name.Text=player.Name esp.Drawings.Name.Visible=true end
-        if ESPConfig.ToolEnabled then
-            local tool=GetTool(player,char)
-            esp.Drawings.Tool.Position=Vector2.new(pos.X,pos.Y-h/2-40)
-            esp.Drawings.Tool.Text=tool and ("Tool: "..tool.Name) or "No Tool"
-            esp.Drawings.Tool.Visible=true
+    end
+
+    -- Name (Independent)
+    if ESPConfig.NameEnabled then 
+        esp.Drawings.Name.Position=Vector2.new(pos.X,pos.Y-h/2-20) 
+        esp.Drawings.Name.Text=player.Name 
+        esp.Drawings.Name.Color = nameColor
+        esp.Drawings.Name.Visible=true 
+    end
+    
+    -- Tool (Independent)
+    if ESPConfig.ToolEnabled then
+        local tool=GetTool(player,char)
+        esp.Drawings.Tool.Position=Vector2.new(pos.X,pos.Y-h/2-40)
+        esp.Drawings.Tool.Text=tool and ("Tool: "..tool.Name) or "No Tool"
+        esp.Drawings.Tool.Color = toolColor
+        esp.Drawings.Tool.Visible=true
+    end
+    
+    -- Distance (Independent)
+    if ESPConfig.DistanceEnabled then 
+        esp.Drawings.Distance.Position=Vector2.new(pos.X,pos.Y+h/2+10) 
+        esp.Drawings.Distance.Text=string.format("%.0f studs",dist) 
+        esp.Drawings.Distance.Color = distanceColor
+        esp.Drawings.Distance.Visible=true 
+    end
+
+    -- Health Bar (Now completely independent)
+    if ESPConfig.HealthBarEnabled then
+        local corners={Vector2.new(pos.X-w/2,pos.Y-h/2),Vector2.new(pos.X+w/2,pos.Y-h/2),
+                       Vector2.new(pos.X+w/2,pos.Y+h/2),Vector2.new(pos.X-w/2,pos.Y+h/2)}
+        local ratio=hum.Health/math.max(hum.MaxHealth,1)
+        
+        -- Health bar background
+        if esp.Drawings.HealthBackground then
+            esp.Drawings.HealthBackground.Position=Vector2.new(corners[1].X-6,corners[1].Y)
+            esp.Drawings.HealthBackground.Size=Vector2.new(4,h)
+            esp.Drawings.HealthBackground.Visible=true
         end
-        if ESPConfig.DistanceEnabled then esp.Drawings.Distance.Position=Vector2.new(pos.X,pos.Y+h/2+10) esp.Drawings.Distance.Text=string.format("%.0f studs",dist) esp.Drawings.Distance.Visible=true end
-        if ESPConfig.HealthBarEnabled then
-            local ratio=hum.Health/math.max(hum.MaxHealth,1)
+        
+        -- Health bar fill
+        if esp.Drawings.Health then
             esp.Drawings.Health.Position=Vector2.new(corners[1].X-6,corners[1].Y+h*(1-ratio))
             esp.Drawings.Health.Size=Vector2.new(4,h*ratio)
             esp.Drawings.Health.Color=(ratio>0.6 and Color3.fromRGB(0,255,0)) or (ratio>0.3 and Color3.fromRGB(255,255,0)) or Color3.fromRGB(255,0,0)
             esp.Drawings.Health.Visible=true
         end
+    end
+
+    -- Chams (Fixed and working)
+    if ESPConfig.ChamsEnabled and esp.Highlight then
+        if isBehindWall and ESPConfig.WallCheckEnabled then
+            esp.Highlight.FillColor = ESPConfig.WallCheckColor
+            esp.Highlight.OutlineColor = ESPConfig.WallCheckColor
+        elseif isLookingAtMe and ESPConfig.VisibilityCheckEnabled then
+            esp.Highlight.FillColor = ESPConfig.VisibilityCheckColor
+            esp.Highlight.OutlineColor = ESPConfig.VisibilityCheckColor
+        else
+            esp.Highlight.FillColor = ESPConfig.ChamsColor
+            esp.Highlight.OutlineColor = ESPConfig.ChamsColor
+        end
+        esp.Highlight.Enabled = true
+    elseif esp.Highlight then
+        esp.Highlight.Enabled = false
     end
 
     -- Line of Sight
@@ -165,9 +306,9 @@ local function UpdateESP(player)
             local line = esp.Drawings.LineOfSight
             line.From = Vector2.new(start2D.X, start2D.Y)
             line.To = Vector2.new(end2D.X, end2D.Y)
+            line.Color = lineColor
             line.Visible = true
 
-            -- Create arrow at the end of the line
             local arrow = esp.Drawings.LOSArrow
             local dirVec = (line.To - line.From).Unit
             local perp = Vector2.new(-dirVec.Y, dirVec.X)
@@ -175,7 +316,7 @@ local function UpdateESP(player)
             arrow.PointA = line.To
             arrow.PointB = line.To - dirVec*size + perp*size*0.5
             arrow.PointC = line.To - dirVec*size - perp*size*0.5
-            arrow.Color = ESPConfig.LineColor
+            arrow.Color = lineColor
             arrow.Visible = true
         else
             esp.Drawings.LineOfSight.Visible = false
@@ -301,7 +442,7 @@ Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel = 0
 Scroll.ScrollBarThickness = 4
 Scroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 800)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 1000)
 Scroll.Parent = Content
 
 local Layout = Instance.new("UIListLayout")
@@ -508,10 +649,12 @@ CreateToggle("Health Bar", "HealthBarEnabled", 5)
 CreateToggle("Skeleton ESP", "SkeletonEnabled", 6)
 CreateToggle("Player Chams", "ChamsEnabled", 7)
 CreateToggle("Line of Sight", "LineOfSightEnabled", 8)
+CreateToggle("Wall Check", "WallCheckEnabled", 9)
+CreateToggle("Visibility Check", "VisibilityCheckEnabled", 10)
 
-CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 9)
-CreateSlider("LOS Length", "LineLength", 10, 100, 25, 10)
-CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 11)
+CreateSlider("ESP Distance", "MaxDistance", 1, 1000, 500, 11)
+CreateSlider("LOS Length", "LineLength", 10, 100, 25, 12)
+CreateSlider("LOS Thickness", "LineThickness", 1, 5, 2, 13)
 
 -- UI State management
 local isMinimized = false
