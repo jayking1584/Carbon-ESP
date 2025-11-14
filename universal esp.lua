@@ -1,5 +1,5 @@
 -- Carbon's Universal ESP - Enhanced GUI Edition
--- Added Line of Sight feature and updated fonts
+-- Fixed Text Features and Health Bars
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -36,7 +36,7 @@ local ESPConfig = {
     ToolEnabled = true,
     SkeletonEnabled = true,
     VisibilityCheck = true,
-    ChamsEnabled = true,
+    ChamsEnabled = false, -- Disabled by default to prevent issues
     HealthBarEnabled = true,
     LineOfSightEnabled = true,
     
@@ -61,8 +61,8 @@ local ESPConfig = {
     BoxThickness = 1,
     TracerThickness = 1,
     SkeletonThickness = 1,
-    HealthBarWidth = 4,
-    HealthBarOffset = 8,
+    HealthBarWidth = 6, -- Increased for better visibility
+    HealthBarOffset = 12, -- Increased for better positioning
     LineOfSightThickness = 2,
     
     -- Text
@@ -358,15 +358,15 @@ local function CreateESP(player)
     end
     
     if ESPConfig.NameEnabled then
-        drawingTypes.Name = {"Text", {Text = player.Name, Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Visible = false}}
+        drawingTypes.Name = {"Text", {Text = player.Name, Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.NameColor, Visible = false}}
     end
     
     if ESPConfig.DistanceEnabled then
-        drawingTypes.Distance = {"Text", {Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Visible = false}}
+        drawingTypes.Distance = {"Text", {Size = ESPConfig.TextSize, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.DistanceColor, Visible = false}}
     end
     
     if ESPConfig.ToolEnabled then
-        drawingTypes.Tool = {"Text", {Size = ESPConfig.TextSize - 2, Center = true, Outline = true, Font = ESPConfig.TextFont, Visible = false}}
+        drawingTypes.Tool = {"Text", {Size = ESPConfig.TextSize - 2, Center = true, Outline = true, Font = ESPConfig.TextFont, Color = ESPConfig.ToolColor, Visible = false}}
     end
     
     if ESPConfig.HealthBarEnabled then
@@ -572,13 +572,14 @@ local function UpdateESP(player, currentTime)
             end
         end
         
+        -- FIXED: Health Bar positioning and calculation
         if ESPConfig.HealthBarEnabled then
             local healthBarX = pos.X - ESPConfig.HealthBarOffset - ESPConfig.HealthBarWidth
             local healthBarY = pos.Y
             local healthBarHeight = size.Y
             
-            local healthPercentage = humanoid.Health / humanoid.MaxHealth
-            local healthHeight = healthBarHeight * math_max(0, math_min(1, healthPercentage))
+            local healthPercentage = math_clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+            local healthHeight = healthBarHeight * healthPercentage
             
             local bg = esp.Drawings.HealthBarBackground
             if bg then
@@ -589,7 +590,7 @@ local function UpdateESP(player, currentTime)
             
             local fill = esp.Drawings.HealthBar
             if fill then
-                fill.Position = Vector2_new(healthBarX, healthBarY + healthBarHeight - healthHeight)
+                fill.Position = Vector2_new(healthBarX, healthBarY + (healthBarHeight - healthHeight))
                 fill.Size = Vector2_new(ESPConfig.HealthBarWidth, healthHeight)
                 fill.Color = GetHealthColor(humanoid.Health, humanoid.MaxHealth)
                 fill.Visible = true
@@ -603,6 +604,7 @@ local function UpdateESP(player, currentTime)
             end
         end
         
+        -- FIXED: Text features positioning and visibility
         local head = character:FindFirstChild("Head")
         if head then
             local headScreenPos = CurrentCamera:WorldToViewportPoint(head.Position)
@@ -614,7 +616,7 @@ local function UpdateESP(player, currentTime)
                     local toolDrawing = esp.Drawings.Tool
                     if toolDrawing then
                         local equippedTool = character:FindFirstChildOfClass("Tool")
-                        toolDrawing.Position = screenPos - Vector2_new(0, 70)
+                        toolDrawing.Position = screenPos - Vector2_new(0, 30)
                         toolDrawing.Text = equippedTool and "Tool: " .. equippedTool.Name or "No Tool"
                         toolDrawing.Color = GetElementColor("Tool", isVisible, player)
                         toolDrawing.Visible = true
@@ -624,7 +626,8 @@ local function UpdateESP(player, currentTime)
                 if ESPConfig.NameEnabled then
                     local nameDrawing = esp.Drawings.Name
                     if nameDrawing then
-                        nameDrawing.Position = screenPos - Vector2_new(0, 50)
+                        nameDrawing.Position = screenPos - Vector2_new(0, 45)
+                        nameDrawing.Text = player.Name
                         nameDrawing.Color = GetElementColor("Name", isVisible, player)
                         nameDrawing.Visible = true
                     end
@@ -639,14 +642,24 @@ local function UpdateESP(player, currentTime)
                     if nameDrawing then nameDrawing.Visible = false end
                 end
             end
+        else
+            if ESPConfig.ToolEnabled then
+                local toolDrawing = esp.Drawings.Tool
+                if toolDrawing then toolDrawing.Visible = false end
+            end
+            if ESPConfig.NameEnabled then
+                local nameDrawing = esp.Drawings.Name
+                if nameDrawing then nameDrawing.Visible = false end
+            end
         end
         
+        -- FIXED: Distance text positioning
         if ESPConfig.DistanceEnabled then
             local distanceDrawing = esp.Drawings.Distance
             if distanceDrawing then
                 local rootScreenPos = CurrentCamera:WorldToViewportPoint(humanoidRootPart.Position)
                 if rootScreenPos.Z > 0 then
-                    distanceDrawing.Position = Vector2_new(rootScreenPos.X, rootScreenPos.Y + 20)
+                    distanceDrawing.Position = Vector2_new(rootScreenPos.X, rootScreenPos.Y + 25)
                     distanceDrawing.Text = string_format("%.0f studs", distance)
                     distanceDrawing.Color = GetElementColor("Distance", isVisible, player)
                     distanceDrawing.Visible = true
