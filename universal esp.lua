@@ -332,7 +332,7 @@ local function UpdateESP(player)
         esp.Drawings.Distance.Visible=true 
     end
 
-    -- FIXED HEALTH BAR: Proper stacking and positioning
+    -- FIXED HEALTH BAR: Using your corrected health calculation
     if ESPConfig.HealthBarEnabled then
         local corners={
             Vector2.new(pos.X-w/2,pos.Y-h/2),
@@ -341,37 +341,50 @@ local function UpdateESP(player)
             Vector2.new(pos.X-w/2,pos.Y+h/2)
         }
         
-        local ratio = hum.Health / math.max(hum.MaxHealth, 1)
-        local healthHeight = math.max(h * ratio, 1)
+        -- FIXED: Proper health calculation with division by zero protection
+        local hp = hum.Health
+        local max = hum.MaxHealth
         
-        -- Health bar background (drawn first, behind everything)
-        if esp.Drawings.HealthBackground then
-            esp.Drawings.HealthBackground.Position = Vector2.new(corners[1].X - 6, corners[1].Y)
-            esp.Drawings.HealthBackground.Size = Vector2.new(4, h)
-            esp.Drawings.HealthBackground.Visible = true
-            -- Health bar background never changes color based on wall/visibility
-        end
-        
-        -- Health bar fill (drawn on top of background)
-        if esp.Drawings.Health then
-            -- Start at bottom and extend upward based on health (more intuitive)
-            local healthY = corners[1].Y + h - healthHeight
+        if max > 0 then
+            local ratio = math.clamp(hp / max, 0, 1)
+            local healthHeight = math.max(h * ratio, 1)
             
-            esp.Drawings.Health.Position = Vector2.new(corners[1].X - 6, healthY)
-            esp.Drawings.Health.Size = Vector2.new(4, healthHeight)
-            
-            -- Dynamic health color (independent of wall/visibility)
-            local healthColor
-            if ratio > 0.6 then
-                healthColor = Color3.fromRGB(0, 255, 0) -- Green
-            elseif ratio > 0.3 then
-                healthColor = Color3.fromRGB(255, 255, 0) -- Yellow
-            else
-                healthColor = Color3.fromRGB(255, 0, 0) -- Red
+            -- Health bar background (drawn first, behind everything)
+            if esp.Drawings.HealthBackground then
+                esp.Drawings.HealthBackground.Position = Vector2.new(corners[1].X - 6, corners[1].Y)
+                esp.Drawings.HealthBackground.Size = Vector2.new(4, h)
+                esp.Drawings.HealthBackground.Visible = true
             end
             
-            esp.Drawings.Health.Color = healthColor
-            esp.Drawings.Health.Visible = true
+            -- Health bar fill (drawn on top of background)
+            if esp.Drawings.Health then
+                -- Start at bottom and extend upward based on health (more intuitive)
+                local healthY = corners[1].Y + h - healthHeight
+                
+                esp.Drawings.Health.Position = Vector2.new(corners[1].X - 6, healthY)
+                esp.Drawings.Health.Size = Vector2.new(4, healthHeight)
+                
+                -- Dynamic health color (independent of wall/visibility)
+                local healthColor
+                if ratio > 0.6 then
+                    healthColor = Color3.fromRGB(0, 255, 0) -- Green
+                elseif ratio > 0.3 then
+                    healthColor = Color3.fromRGB(255, 255, 0) -- Yellow
+                else
+                    healthColor = Color3.fromRGB(255, 0, 0) -- Red
+                end
+                
+                esp.Drawings.Health.Color = healthColor
+                esp.Drawings.Health.Visible = true
+            end
+        else
+            -- Hide health bar if max health is 0 (character not loaded)
+            if esp.Drawings.HealthBackground then
+                esp.Drawings.HealthBackground.Visible = false
+            end
+            if esp.Drawings.Health then
+                esp.Drawings.Health.Visible = false
+            end
         end
     end
 
@@ -440,14 +453,21 @@ local function UpdateESP(player)
         esp.Highlight.Enabled = false
     end
 
-    -- FIXED LINE OF SIGHT: Proper arrow positioning and visibility
+    -- FIXED LINE OF SIGHT: Using your corrected arrow positioning
     if ESPConfig.LineOfSightEnabled and head and esp.Drawings.LineOfSight then
-        local startPos = head.Position
-        local lookVector = head.CFrame.LookVector
-        local endPos = startPos + lookVector * ESPConfig.LineLength
+        local origin = head.Position
+        local direction = head.CFrame.LookVector * ESPConfig.LineLength
+        
+        -- Perform raycast to find actual endpoint
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {LocalPlayer.Character, char}
+        local result = Workspace:Raycast(origin, direction, params)
+        
+        local endPoint = result and result.Position or (origin + direction)
 
-        local start2D, onScreenStart = Camera:WorldToViewportPoint(startPos)
-        local end2D, onScreenEnd = Camera:WorldToViewportPoint(endPos)
+        local start2D, onScreenStart = Camera:WorldToViewportPoint(origin)
+        local end2D, onScreenEnd = Camera:WorldToViewportPoint(endPoint)
         
         if onScreenStart and onScreenEnd then
             local line = esp.Drawings.LineOfSight
@@ -456,28 +476,27 @@ local function UpdateESP(player)
             line.Color = lineColor
             line.Visible = true
 
-            -- FIXED ARROW: Proper triangle positioning
+            -- FIXED ARROW: Using your corrected positioning
             local arrow = esp.Drawings.LOSArrow
             if arrow then
-                local direction = (line.To - line.From)
-                local length = direction.Magnitude
+                local direction2D = (line.To - line.From)
+                local length = direction2D.Magnitude
                 
                 if length > 5 then
-                    local dir = direction.Unit
-                    local arrowSize = 8 -- Arrow size in pixels
+                    local dir = direction2D.Unit
+                    local arrowLength = 15
+                    local arrowWidth = 8
                     
                     -- Calculate perpendicular vector for arrow wings
                     local perp = Vector2.new(-dir.Y, dir.X)
                     
-                    -- Arrow points: tip at line end, wings slightly back
-                    local tip = line.To
-                    local wing1 = line.To - dir * arrowSize + perp * arrowSize/2
-                    local wing2 = line.To - dir * arrowSize - perp * arrowSize/2
+                    -- Arrow points: tip at the end, base slightly back
+                    local base = line.To - dir * arrowLength
                     
-                    -- Set triangle points
-                    arrow.PointA = tip
-                    arrow.PointB = wing1
-                    arrow.PointC = wing2
+                    -- Set triangle points (tip at line end)
+                    arrow.PointA = line.To -- Tip
+                    arrow.PointB = base + perp * arrowWidth -- Left wing
+                    arrow.PointC = base - perp * arrowWidth -- Right wing
                     
                     arrow.Color = lineColor
                     arrow.Visible = true
